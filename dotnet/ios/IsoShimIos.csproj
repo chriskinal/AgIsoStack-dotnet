@@ -21,6 +21,7 @@
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
     <EmbeddedResource Include="../../testpools/inputs.iop" LogicalName="inputs.iop" />
+    <EmbeddedResource Include="../../testpools/drawing.iop" LogicalName="drawing.iop" />
     <NativeReference Include="../../native/build-ios/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
   </ItemGroup>
 </Project>

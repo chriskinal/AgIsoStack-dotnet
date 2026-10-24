@@ -95,6 +95,8 @@ ISOSHIM_API int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen)
 // written; returns how many there are), and the test implement asking for one of them to be shown.
 ISOSHIM_API int32_t isoshim_test_masks(uint16_t *ids, int32_t max);
 ISOSHIM_API int32_t isoshim_test_show(uint16_t mask);
+// Self-test only: the test implement sends these 8 bytes to the terminal (ECU to VT).
+ISOSHIM_API int32_t isoshim_test_send(const uint8_t *data, int32_t len);
 ISOSHIM_API void isoshim_set_log(isoshim_log_fn fn, int32_t level);
 // Any thread. Frames are handed to the stack at the next isoshim_step.
 ISOSHIM_API void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t len, int32_t extended);

@@ -111,7 +111,16 @@ public:
 	// be destroyed (by the base class, after this) until it has finished. Upstream's working set
 	// does not join it itself (AgIsoStack++ #802).
 	~Terminal() {
+		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(
+		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), onImplementMessage, this);
 		for (const auto &ws : managedWorkingSetList) ws->join_parsing_thread();
+	}
+
+	// After the base class's own initialize: a second listener on the implements' messages, for the
+	// ones upstream acknowledges and drops (audio, gap 5) or does not handle (ESC, gap 8).
+	void listen() {
+		isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
+		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), onImplementMessage, this);
 	}
 
 	bool get_is_enough_memory(std::uint32_t) const override { return true; }
@@ -214,6 +223,7 @@ public:
 		flushOutbox();
 		followActive();
 		reportWorkingSets();
+		reportAlarms();
 		if (dirty_) {
 			dirty_ = false;
 			drawScreen();
@@ -401,6 +411,75 @@ public:
 	}
 
 private:
+	// Every implement showing an alarm mask, shown or not: {"type":"alarms","list":[{ws, address,
+	// mask, priority (0 high, 1 medium, 2 low), signal (0 highest .. 3 none)}]}, sent on change.
+	void reportAlarms() {
+		isoshim::Json json;
+		json.begin_object().key("type").value("alarms").key("list").begin_array();
+		for (const auto &ws : managedWorkingSetList) {
+			const auto object = workingSetObject(ws);
+			const auto mask = object ? find(ws, object->get_active_mask()) : nullptr;
+			if (!mask || mask->get_object_type() != isobus::VirtualTerminalObjectType::AlarmMask) continue;
+			const auto alarm = std::static_pointer_cast<isobus::AlarmMask>(mask);
+			json.begin_object().key("ws").value(isoshim::hexName(nameOf(ws))).key("address").value(addressOf(ws));
+			json.key("mask").value(static_cast<int>(mask->get_id()));
+			json.key("priority").value(static_cast<int>(alarm->get_mask_priority()));
+			json.key("signal").value(static_cast<int>(alarm->get_signal_priority())).end_object();
+		}
+		json.end_array().end_object();
+		if (json.str() == lastAlarms_) return;
+		lastAlarms_ = json.str();
+		message(lastAlarms_);
+	}
+
+	static void onImplementMessage(const isobus::CANMessage &m, void *parent) {
+		auto *self = static_cast<Terminal *>(parent);
+		const auto &data = m.get_data();
+		if (data.size() < 8 || m.get_destination_control_function() != self->serverInternalControlFunction) return;
+		std::shared_ptr<WorkingSet> ws;
+		for (const auto &candidate : self->managedWorkingSetList)
+			if (candidate->get_control_function() == m.get_source_control_function()) ws = candidate;
+		if (!ws) return;
+		isoshim::Json json;
+		switch (data[0]) {
+			case static_cast<std::uint8_t>(Function::ControlAudioSignalCommand):
+				// activations 0 stops a signal that is sounding
+				json.begin_object().key("type").value("audio").key("ws").value(isoshim::hexName(nameOf(ws)));
+				json.key("activations").value(static_cast<int>(data[1])).key("frequency").value(static_cast<int>(m.get_uint16_at(2)));
+				json.key("on").value(static_cast<int>(m.get_uint16_at(4))).key("off").value(static_cast<int>(m.get_uint16_at(6))).end_object();
+				message(json.str());
+				break;
+			case static_cast<std::uint8_t>(Function::SetAudioVolumeCommand):
+				json.begin_object().key("type").value("volume").key("ws").value(isoshim::hexName(nameOf(ws)));
+				json.key("percent").value(static_cast<int>(data[1])).end_object();
+				message(json.str());
+				break;
+			case static_cast<std::uint8_t>(Function::ESCCommand): self->escCommand(ws); break;
+			default: break;
+		}
+	}
+
+	// The implement's ESC command: its open field closes (no VT ESC message: the implement asked),
+	// and the answer names the field, or says none was open.
+	void escCommand(const std::shared_ptr<WorkingSet> &ws) {
+		std::uint16_t id = isobus::NULL_OBJECT_ID;
+		std::uint8_t error = 1; // no input field is open
+		if (openWs_ == ws && openId_ != isobus::NULL_OBJECT_ID) {
+			id = openId_;
+			error = 0;
+			setOpen(ws, isobus::NULL_OBJECT_ID);
+			runMacros(ws, find(ws, id), isobus::EventID::OnESC);
+			dirty_ = true;
+		}
+		post([=] {
+			const std::uint8_t data[8] = { static_cast<std::uint8_t>(Function::ESCCommand), static_cast<std::uint8_t>(id & 0xFF),
+				                           static_cast<std::uint8_t>(id >> 8), error, 0xFF, 0xFF, 0xFF, 0xFF };
+			return isobus::CANNetworkManager::CANNetwork.send_can_message(
+			  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), data, sizeof data,
+			  serverInternalControlFunction, ws->get_control_function(), get_priority());
+		});
+	}
+
 	// The operator's messages to an implement, in order. One the stack cannot take now (a
 	// multi-frame message while the last one to the same implement is still closing) waits for a
 	// later step; after 2 s it is dropped (the implement has gone).
@@ -565,6 +644,7 @@ private:
 	std::string lastScreen_;
 	isoshim::Renderer renderer_;
 	std::deque<std::pair<std::uint32_t, std::function<bool()>>> outbox_;
+	std::string lastAlarms_;
 	std::shared_ptr<WorkingSet> openWs_;
 	std::uint16_t openId_ = isobus::NULL_OBJECT_ID;
 	isobus::EventCallbackHandle repaintHandle_, maskHandle_, keyMaskHandle_, focusHandle_;
@@ -576,6 +656,17 @@ std::shared_ptr<isobus::VirtualTerminalClient> g_client;
 std::shared_ptr<isobus::PartneredControlFunction> g_partner;
 std::vector<std::uint8_t> g_pool;
 bool g_serverReported = false, g_clientReported = false;
+
+// Self-test: the terminal's answer to the test implement's ESC command, which upstream's client
+// does not report.
+void heardEscResponse(const isobus::CANMessage &m, void *) {
+	const auto &data = m.get_data();
+	if (data.size() < 4 || data[0] != 0x92 || m.get_destination_control_function() != g_clientCf) return;
+	isoshim::Json json;
+	json.begin_object().key("type").value("implement").key("event").value("escResponse");
+	json.key("o").value(static_cast<int>(m.get_uint16_at(1))).key("error").value(static_cast<int>(data[3])).end_object();
+	message(json.str());
+}
 
 isobus::NAME makeName(isobus::NAME::Function function, std::uint32_t identity, std::uint16_t manufacturer, std::uint8_t instance) {
 	isobus::NAME name(0);
@@ -640,6 +731,7 @@ int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *ho
 	  g_config.preferred_address);
 	g_terminal.reset(new Terminal(g_serverCf));
 	g_terminal->initialize();
+	g_terminal->listen();
 	return 0;
 }
 
@@ -687,6 +779,8 @@ int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen) {
 		json->key("value").value(isoshim::utf8(e.value)).end_object();
 		message(json->str());
 	});
+	isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
+	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, nullptr);
 	g_client->initialize(false); // updated from isoshim_step, not its own thread
 	return 0;
 }
@@ -705,6 +799,14 @@ int32_t isoshim_test_show(uint16_t mask) {
 	g_terminal->masks(workingSet);
 	if (workingSet == isobus::NULL_OBJECT_ID) return 0;
 	const bool sent = g_client->send_change_active_mask(workingSet, mask);
+	flushTransmit();
+	return sent ? 1 : 0;
+}
+
+int32_t isoshim_test_send(const uint8_t *data, int32_t len) {
+	if (!g_client || !g_clientCf || !g_partner || !data || len != 8) return 0;
+	const bool sent = isobus::CANNetworkManager::CANNetwork.send_can_message(
+	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), data, 8, g_clientCf, g_partner);
 	flushTransmit();
 	return sent ? 1 : 0;
 }
@@ -809,7 +911,11 @@ int32_t isoshim_activate(uint64_t name) {
 // Everything goes while the network manager is still alive: left to the end of the process, these
 // objects would unregister from one that has already been destroyed.
 void isoshim_stop(void) {
-	if (g_client) g_client->terminate();
+	if (g_client) {
+		g_client->terminate();
+		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(
+		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, nullptr);
+	}
 	g_client.reset();
 	g_terminal.reset(); // joins any parsing thread
 	if (g_partner) isobus::CANNetworkManager::CANNetwork.deactivate_control_function(g_partner);

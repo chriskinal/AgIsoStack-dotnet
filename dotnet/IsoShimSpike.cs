@@ -26,6 +26,8 @@ public static unsafe class IsoShimSpike
     static readonly List<string> screens = new();
     // The input run: edit messages, and what the test implement heard.
     static readonly List<string> edits = new(), heard = new();
+    // The alarms messages, and the audio and volume ones.
+    static readonly List<string> alarms = new(), audio = new();
     static readonly Dictionary<uint, (int W, int H, byte[] Rgba)> images = new();
     // Stored pool versions, by NAME and label, as a host would keep them on disk.
     static readonly Dictionary<(ulong Name, string Label), List<byte>> store = new();
@@ -69,6 +71,8 @@ public static unsafe class IsoShimSpike
         else if (s.StartsWith("{\"type\":\"screen\"") && !screens.Contains(s)) screens.Add(s);
         else if (s.StartsWith("{\"type\":\"edit\"")) edits.Add(s);
         else if (s.StartsWith("{\"type\":\"implement\"")) heard.Add(s);
+        else if (s.StartsWith("{\"type\":\"alarms\"")) alarms.Add(s);
+        else if (s.StartsWith("{\"type\":\"audio\"") || s.StartsWith("{\"type\":\"volume\"")) audio.Add(s);
     }
 
     [UnmanagedCallersOnly]
@@ -145,6 +149,7 @@ public static unsafe class IsoShimSpike
         ok &= Run(log, 255);
         ok &= Run(log, 255, fromStore: true);
         ok &= RunInput(log);
+        ok &= RunAlarms(log);
         if (ScreenDir != null) WriteScreens(log);
         log(ok ? "ALL PASS" : "SOME FAILED");
         return ok;
@@ -313,11 +318,84 @@ public static unsafe class IsoShimSpike
             Check("Rate is still 40.0 and still selected, not open", Drawn("\"s\":\"40.0\"") &&
                 Drawn("\"o\":9000,\"x\":150,\"y\":40,\"w\":120,\"h\":20,\"kind\":\"input\",\"on\":true,\"sel\":true}"));
             Check("select nothing: 1, the implement hears Rate deselected", isoshim_select(0xFFFF, 0) == 1 && Heard("\"select\",\"o\":9000,\"selected\":false"));
+            heard.Clear();
+            Check("the implement's ESC with nothing open: answered, error 1", TestSend(0x92, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF) == 1
+                && Heard("\"escResponse\",\"o\":65535,\"error\":1"));
+            Check("select Name open, then the implement's ESC: answered with Name", isoshim_select(8000, 1) == 1
+                && TestSend(0x92, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF) == 1 && Heard("\"escResponse\",\"o\":8000,\"error\":0"));
+            Check("the editor closes, and no VT ESC goes back", LastEdit().Contains("\"o\":null") && !heard.Any(h => h.Contains("\"event\":\"esc\"")));
         }
         isoshim_stop();
         log($"every callback on the stepping thread: {(callbackOffThread ? "no" : "yes")}");
         bool pass = failures == 0 && !callbackOffThread;
         log(pass ? "PASS: input fields" : $"FAIL: input fields, {failures} checks failed");
+        return pass;
+    }
+
+    /// <summary>Alarms and audio on testpools/drawing.iop: its alarm mask (2000, high priority,
+    /// signal 1) comes and goes in the alarms message; Control Audio Signal and Set Audio Volume
+    /// from the implement reach the host.</summary>
+    static bool RunAlarms(Action<string> log)
+    {
+        log("--- alarms and audio");
+        stepThread = Environment.CurrentManagedThreadId;
+        callbackOffThread = false;
+        mask = poolBad = poolObjects = -1;
+        screens.Clear();
+        alarms.Clear();
+        audio.Clear();
+        store.Clear();
+        byte[] pool = LoadPool("drawing.iop");
+        var config = new Config();
+        var host = new Host
+        {
+            Send = &OnSend, Event = &OnEvent, Message = &OnMessage, Image = &OnImage,
+            Save = &OnSave, Load = &OnLoad, List = &OnList, Remove = &OnRemove,
+        };
+        int rc = isoshim_vt_start(&config, &host);
+        if (rc == 0)
+            fixed (byte* p = pool)
+                rc = isoshim_test_implement(p, pool.Length);
+        if (rc != 0) { log($"FAIL start returned {rc}"); isoshim_stop(); return false; }
+        var clock = Stopwatch.StartNew();
+        bool StepUntil(Func<bool> done, double ms = 2000)
+        {
+            for (var end = clock.Elapsed.TotalMilliseconds + ms; clock.Elapsed.TotalMilliseconds < end;)
+            {
+                if (done()) return true;
+                isoshim_step();
+                Thread.Sleep(2);
+            }
+            return done();
+        }
+        int failures = 0;
+        void Check(string what, bool pass)
+        {
+            if (!pass) failures++;
+            log($"  {(pass ? "ok  " : "FAIL")} {what}");
+        }
+        const string none = "{\"type\":\"alarms\",\"list\":[]}";
+        bool ready = StepUntil(() => mask == 1000, 15000);
+        Check("the pool is up, data mask 1000", ready);
+        if (ready)
+        {
+            Check("alarms: none", StepUntil(() => alarms.LastOrDefault() == none));
+            Check("the implement shows alarm mask 2000: 1", isoshim_test_show(2000) == 1);
+            Check("alarms: 2000, high priority", StepUntil(() => alarms.LastOrDefault()?.Contains("\"mask\":2000,\"priority\":0,") == true));
+            // The pool says signal 1; upstream's parser drops it (PLAN.md, upstream gap 10).
+            log($"  ..   signal reported: {(alarms.LastOrDefault()?.Contains("\"signal\":1}") == true ? "1, as in the pool" : "0, not the pool's 1 (upstream gap 10)")}");
+            Check("the screen is the alarm mask", StepUntil(() => screens.Any(x => x.Contains("\"mask\":2000,\"kind\":\"alarm\""))));
+            Check("back to data mask 1000: alarms none", isoshim_test_show(1000) == 1 && StepUntil(() => alarms.LastOrDefault() == none));
+            Check("Control Audio Signal 3 x 1000 Hz, 200 ms on, 100 ms off",
+                TestSend(0xA3, 3, 0xE8, 0x03, 0xC8, 0x00, 0x64, 0x00) == 1 &&
+                StepUntil(() => audio.Any(a => a.Contains("\"type\":\"audio\"") && a.EndsWith("\"activations\":3,\"frequency\":1000,\"on\":200,\"off\":100}"))));
+            Check("Set Audio Volume 50 %", TestSend(0xA4, 50, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF) == 1 &&
+                StepUntil(() => audio.Any(a => a.EndsWith("\"percent\":50}"))));
+        }
+        isoshim_stop();
+        log($"every callback on the stepping thread: {(callbackOffThread ? "no" : "yes")}");
+        bool pass = failures == 0 && !callbackOffThread;
+        log(pass ? "PASS: alarms and audio" : $"FAIL: alarms and audio, {failures} checks failed");
         return pass;
     }
 

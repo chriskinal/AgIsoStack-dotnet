@@ -41,6 +41,12 @@ public static unsafe class IsoShim
     [DllImport(Lib)] public static extern int isoshim_test_implement(byte* pool, int poolLen);
     [DllImport(Lib)] public static extern int isoshim_test_masks(ushort* ids, int max);
     [DllImport(Lib)] public static extern int isoshim_test_show(ushort mask);
+    [DllImport(Lib)] public static extern int isoshim_test_send(byte* data, int len);
+
+    public static int TestSend(params byte[] data)
+    {
+        fixed (byte* p = data) return isoshim_test_send(p, data.Length);
+    }
     [DllImport(Lib)] public static extern void isoshim_set_log(delegate* unmanaged<int, byte*, void> fn, int level);
     [DllImport(Lib)] public static extern void isoshim_receive(int channel, uint id, byte* data, int len, int extended);
     [DllImport(Lib)] public static extern void isoshim_step();

@@ -52,7 +52,11 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    repaint, focus, audio, shutdowns), the operator's input (soft keys, buttons, numeric and
    string input), and storing pools (versions) through callbacks. Decided: a draw list built on
    the native side (above). Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
-   with the native libraries per runtime.
+   with the native libraries per runtime. Done: config, storage, working sets, the draw list,
+   soft keys and buttons, input fields (select, numbers, strings, booleans, lists, escape),
+   alarms and audio. Next: the C# package. The terminal is AgOpenWeb's VT card, in its backend
+   (it replaces the `aow-vtd` daemon once planned): any implement, ISOBUS or DIY, talks to
+   AgOpenWeb directly (decided 2026-10-24).
 2. **The client side**, for implements in .NET (the stack's VT client and task controller
    client), on the same one-thread model.
 3. **Tests in CI**: the self-test on Linux and macOS runners; the stop-while-parsing run is the
@@ -111,11 +115,12 @@ upstream pull request with a test; the wrapper's terminal will meet them.
 | 2 | Status messages start at once after a restart, so an implement never sees the terminal go away (espVT: no status for the first 5 s) | stored pools |
 | 3 | Changing the active mask does not run the pool's On Show and On Hide macros | drawing |
 | 4 | `get_object_by_id` uses `operator[]`, so looking up a missing id adds an empty entry | drawing |
-| 5 | Control Audio Signal and Set Audio Volume are acknowledged and dropped, with nothing to override | alarms |
+| 5 | Control Audio Signal and Set Audio Volume are acknowledged and dropped, with nothing to override. The wrapper hears them from its own listener and passes them to the host | alarms |
 | 6 | Every Change Numeric Value repaints, changed or not (upstream #796) | drawing |
 | 7 | A long ETP stream during an upload is drained in one pass, starving other work (espVT: at most 32 per pass) | not seen on the bench |
-| 8 | The implement's ESC command (0x92) is not handled: an open field is not closed and no VT ESC message is sent back (found here, 2026-10-24) | input |
+| 8 | The implement's ESC command (0x92) is not handled: an open field is not closed and no answer is sent. The wrapper answers it from its own listener (found here, 2026-10-24) | input |
 | 9 | Sending a second multi-frame message to an implement while the last one is closing fails (one session per pair); the server's own sends do not retry. The wrapper queues the operator's messages (`Terminal::post`) (found here, 2026-10-24) | input |
+| 10 | The pool parser checks an alarm mask's acoustic signal but never stores it (`set_signal_priority` is not called), so every alarm mask reports signal 0, the highest (found here, 2026-10-24; a one-line fix) | alarms |
 
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one

@@ -40,9 +40,18 @@ Everything except `isoshim_receive` and the log runs on the stepping thread, as 
     (`transferring`, `parsing`, `ready`, `failed`, with progress), which one is active.
   - `screen`: the active implement's data or alarm mask and its soft key mask as draw lists. Sent
     when the server repaints and the list differs from the last one sent.
-  - `alarm`: an implement (active or not) has shown an alarm mask, with priority and acoustic
-    signal; cleared when it leaves it. (Later.)
-  - `audio`: Control Audio Signal (upstream acknowledges and drops it, gap 5). (Later.)
+  - `alarms`: every implement showing an alarm mask, shown on screen or not, sent whenever the
+    list changes: `{"type":"alarms","list":[{"ws","address","mask","priority","signal"}]}`.
+    Priority 0 high, 1 medium, 2 low; acoustic signal 0 highest to 2 lowest, 3 none (always 0
+    for now: upstream gap 10). The terminal does not switch implements for an alarm: the host
+    shows it over whatever is open and can bring that implement up with `isoshim_activate`.
+    The implement clears it by leaving the alarm mask (usually on its own acknowledge key).
+  - `audio`: Control Audio Signal, `{"type":"audio","ws","activations","frequency","on","off"}`
+    (Hz and ms; activations 0 stops a sounding signal); `volume`: Set Audio Volume,
+    `{"type":"volume","ws","percent"}`. Upstream acknowledges both and drops them (gap 5); the
+    shim hears them alongside it.
+  - The implement's ESC command closes its open field and is answered (upstream does not
+    handle it, gap 8); the host gets the edit message with `"o":null`.
 - **Images** come by their own callback, `image(id, width, height, rgba)`, once per picture graphic
   (decoded natively: 1, 4 and 8 bit, run-length, the working set's colour table, transparency);
   the draw list refers to them by id.

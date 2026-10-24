@@ -13,6 +13,7 @@
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
     <EmbeddedResource Include="../../testpools/inputs.iop" LogicalName="inputs.iop" />
+    <EmbeddedResource Include="../../testpools/drawing.iop" LogicalName="drawing.iop" />
     <None Include="$(IsoShimLib)" CopyToOutputDirectory="PreserveNewest" Condition="'$(IsoShimLib)' != ''" />
   </ItemGroup>
 </Project>

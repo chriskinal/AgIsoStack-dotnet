@@ -4,9 +4,11 @@
 #include "isoshim.h"
 #include "render.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -96,6 +98,13 @@ public:
 		  [this](std::shared_ptr<WorkingSet>, std::uint16_t, std::uint16_t) { dirty_ = true; });
 		keyMaskHandle_ = get_on_change_active_softkey_mask_event_dispatcher().add_listener(
 		  [this](std::shared_ptr<WorkingSet>, std::uint16_t, std::uint16_t) { dirty_ = true; });
+		// The implement selected an input itself (Select Input Object command): upstream has set
+		// the focus; the editor follows it.
+		focusHandle_ = get_on_focus_object_event_dispatcher().add_listener([this](std::shared_ptr<WorkingSet> ws, std::uint16_t id, bool open) {
+			if (ws != activeWorkingSet) return;
+			setOpen(ws, open ? id : isobus::NULL_OBJECT_ID);
+			dirty_ = true;
+		});
 	}
 
 	// A pool can still be parsing on its own thread; the working set that owns the thread must not
@@ -182,6 +191,10 @@ public:
 	void handle_unexpected_working_set_shutdown(std::shared_ptr<WorkingSet> ws, UnexpectedShutdownReason reason) override {
 		listChanged_ = true;
 		renderer_.forget(ws.get());
+		if (ws == openWs_) {
+			openWs_ = nullptr;
+			openId_ = isobus::NULL_OBJECT_ID;
+		}
 		g_host.event(ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
 	}
 
@@ -198,6 +211,7 @@ public:
 			if (!running) parsing_.erase(ws.get());
 		}
 		update();
+		flushOutbox();
 		followActive();
 		reportWorkingSets();
 		if (dirty_) {
@@ -235,6 +249,132 @@ public:
 		return ids;
 	}
 
+	// ---- Input fields (docs/API.md): select, enter a value, escape ----
+
+	// The operator selects an input field or a button (open: an editor is up for an input), or
+	// nothing (NULL_OBJECT_ID). Only what the last screen drew, enabled, can be selected.
+	bool select(std::uint16_t id, bool open) {
+		const auto ws = activeWorkingSet;
+		if (!workingSetObject(ws)) return false;
+		const bool none = id == isobus::NULL_OBJECT_ID;
+		if (!none && !renderer_.touchable(id)) return false;
+		const auto object = none ? nullptr : find(ws, id);
+		if (!object || object->get_object_type() == isobus::VirtualTerminalObjectType::Button) open = false;
+		const std::uint16_t old = ws->get_object_focus();
+		if (openId_ != isobus::NULL_OBJECT_ID && (openId_ != id || !open)) escape(); // leaving an open field aborts it
+		if (old != id) {
+			if (old != isobus::NULL_OBJECT_ID) runMacros(ws, find(ws, old), isobus::EventID::OnInputFieldDeselection);
+			ws->set_object_focus(id);
+			if (!none) runMacros(ws, object, isobus::EventID::OnInputFieldSelection);
+		}
+		if (!none)
+			post([=] { return send_select_input_object_message(id, true, open, ws->get_control_function()); });
+		else if (old != isobus::NULL_OBJECT_ID)
+			post([=] { return send_select_input_object_message(old, false, false, ws->get_control_function()); });
+		setOpen(ws, open ? id : isobus::NULL_OBJECT_ID);
+		dirty_ = true;
+		return true;
+	}
+
+	// A value for an input number (raw, before offset and scale), boolean (0 or 1) or list (the
+	// item's index). 1: entered; -1: not a valid value (the field stays as it was); 0: not an
+	// enabled input on the screen.
+	int setNumber(std::uint16_t id, std::uint32_t value) {
+		using Type = isobus::VirtualTerminalObjectType;
+		const auto ws = activeWorkingSet;
+		if (!workingSetObject(ws) || !renderer_.touchable(id)) return 0;
+		const auto object = find(ws, id);
+		std::uint16_t variableId = isobus::NULL_OBJECT_ID;
+		std::uint32_t own = 0;
+		switch (object->get_object_type()) {
+			case Type::InputNumber: {
+				const auto n = std::static_pointer_cast<isobus::InputNumber>(object);
+				if (value < n->get_minimum_value() || value > n->get_maximum_value()) return -1;
+				variableId = n->get_variable_reference();
+				own = n->get_value();
+				break;
+			}
+			case Type::InputBoolean: {
+				const auto b = std::static_pointer_cast<isobus::InputBoolean>(object);
+				if (value > 1) return -1;
+				variableId = b->get_variable_reference();
+				own = b->get_value();
+				break;
+			}
+			case Type::InputList: {
+				const auto l = std::static_pointer_cast<isobus::InputList>(object);
+				if (value >= object->get_number_children() || !find(ws, object->get_child_id(static_cast<std::uint16_t>(value)))) return -1;
+				variableId = l->get_variable_reference();
+				own = l->get_value();
+				break;
+			}
+			default: return 0;
+		}
+		const auto found = find(ws, variableId);
+		const auto variable = found && found->get_object_type() == Type::NumberVariable ? std::static_pointer_cast<isobus::NumberVariable>(found) : nullptr;
+		const std::uint32_t old = variable ? variable->get_value() : own;
+		if (variable)
+			variable->set_value(value);
+		else if (object->get_object_type() == Type::InputNumber)
+			std::static_pointer_cast<isobus::InputNumber>(object)->set_value(value);
+		else if (object->get_object_type() == Type::InputBoolean)
+			std::static_pointer_cast<isobus::InputBoolean>(object)->set_value(static_cast<std::uint8_t>(value));
+		else
+			std::static_pointer_cast<isobus::InputList>(object)->set_value(static_cast<std::uint8_t>(value));
+		post([=] { return send_change_numeric_value_message(id, value, ws->get_control_function()); });
+		entered(ws, object, value != old);
+		return 1;
+	}
+
+	// Text (UTF-8) for an input string; stored in the field's encoding and padded to its length.
+	// Results as setNumber: -1 when too long, or a character the field does not take.
+	int setString(std::uint16_t id, const std::string &text) {
+		using Type = isobus::VirtualTerminalObjectType;
+		const auto ws = activeWorkingSet;
+		if (!workingSetObject(ws) || !renderer_.touchable(id)) return 0;
+		const auto object = find(ws, id);
+		if (object->get_object_type() != Type::InputString) return 0;
+		const auto field = std::static_pointer_cast<isobus::InputString>(object);
+		const auto found = find(ws, field->get_variable_reference());
+		const auto variable = found && found->get_object_type() == Type::StringVariable ? std::static_pointer_cast<isobus::StringVariable>(found) : nullptr;
+		const std::string current = variable ? variable->get_value() : field->get_value();
+		std::string value;
+		if (!isoshim::poolText(text, current, value)) return -1;
+		const auto attributes = find(ws, field->get_input_attributes());
+		if (attributes && attributes->get_object_type() == Type::InputAttributes) {
+			const auto a = std::static_pointer_cast<isobus::InputAttributes>(attributes);
+			const auto listed = isoshim::codePoints(isoshim::utf8(a->get_validation_string()));
+			const bool only = a->get_validation_type() == isobus::InputAttributes::ValidationType::ValidCharactersAreListed;
+			for (const auto c : isoshim::codePoints(text))
+				if ((std::find(listed.begin(), listed.end(), c) != listed.end()) != only) return -1;
+		}
+		if (variable)
+			variable->set_value(value);
+		else
+			field->set_value(value);
+		post([=] { return send_change_string_value_message(id, value, ws->get_control_function()); });
+		entered(ws, object, value != current);
+		return 1;
+	}
+
+	// The operator abandons the open field (VT ESC message). False if none is open.
+	bool escape() {
+		if (openId_ == isobus::NULL_OBJECT_ID || !openWs_) return false;
+		const auto ws = openWs_;
+		const std::uint16_t id = openId_;
+		post([=] {
+			const std::uint8_t data[8] = { static_cast<std::uint8_t>(Function::VTESCMessage), static_cast<std::uint8_t>(id & 0xFF),
+				                           static_cast<std::uint8_t>(id >> 8), 0, 0xFF, 0xFF, 0xFF, 0xFF };
+			return isobus::CANNetworkManager::CANNetwork.send_can_message(
+			  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), data, sizeof data,
+			  serverInternalControlFunction, ws->get_control_function(), get_priority());
+		});
+		setOpen(ws, isobus::NULL_OBJECT_ID);
+		runMacros(ws, find(ws, id), isobus::EventID::OnESC);
+		dirty_ = true;
+		return true;
+	}
+
 	// Soft keys and buttons: the activation message to the implement and the key's macros.
 	bool key(std::uint16_t id, std::int32_t state, bool button) {
 		const auto ws = activeWorkingSet;
@@ -250,14 +390,55 @@ public:
 		}
 		const auto activation = static_cast<KeyActivationCode>(state);
 		const auto client = ws->get_control_function();
-		const bool sent = button ? send_button_activation_message(activation, id, activeWorkingSetDataMaskObjectID, code, client)
-		                         : send_soft_key_activation_message(activation, id, activeWorkingSetDataMaskObjectID, code, client);
+		const std::uint16_t parent = activeWorkingSetDataMaskObjectID;
+		post([=] {
+			return button ? send_button_activation_message(activation, id, parent, code, client)
+			              : send_soft_key_activation_message(activation, id, parent, code, client);
+		});
 		if (state == ISOSHIM_PRESSED) runMacros(ws, object, isobus::EventID::OnKeyPress);
 		if (state == ISOSHIM_RELEASED) runMacros(ws, object, isobus::EventID::OnKeyRelease);
-		return sent;
+		return true;
 	}
 
 private:
+	// The operator's messages to an implement, in order. One the stack cannot take now (a
+	// multi-frame message while the last one to the same implement is still closing) waits for a
+	// later step; after 2 s it is dropped (the implement has gone).
+	void post(std::function<bool()> send) {
+		if (outbox_.empty() && send()) return;
+		outbox_.push_back({ isobus::SystemTiming::get_timestamp_ms() + 2000, std::move(send) });
+	}
+	void flushOutbox() {
+		while (!outbox_.empty() && (outbox_.front().second() || isobus::SystemTiming::get_timestamp_ms() > outbox_.front().first))
+			outbox_.pop_front();
+	}
+
+	// A value was entered: the entry macros, and the field closes but stays selected.
+	void entered(const std::shared_ptr<WorkingSet> &ws, const std::shared_ptr<isobus::VTObject> &object, bool changed) {
+		const std::uint16_t id = object->get_id();
+		if (ws->get_object_focus() != id) {
+			const std::uint16_t old = ws->get_object_focus();
+			if (old != isobus::NULL_OBJECT_ID) runMacros(ws, find(ws, old), isobus::EventID::OnInputFieldDeselection);
+			ws->set_object_focus(id);
+			runMacros(ws, object, isobus::EventID::OnInputFieldSelection);
+		}
+		if (openId_ == id) post([=] { return send_select_input_object_message(id, true, false, ws->get_control_function()); });
+		setOpen(ws, isobus::NULL_OBJECT_ID);
+		runMacros(ws, object, isobus::EventID::OnEntryOfAValue);
+		if (changed) runMacros(ws, object, isobus::EventID::OnEntryOfANewValue);
+		dirty_ = true;
+	}
+
+	// Which field is open for input; the host is told with an edit message (o null: closed).
+	void setOpen(const std::shared_ptr<WorkingSet> &ws, std::uint16_t id) {
+		if (id == openId_ && ws == openWs_) return;
+		const bool wasOpen = openId_ != isobus::NULL_OBJECT_ID;
+		openId_ = id;
+		openWs_ = id == isobus::NULL_OBJECT_ID ? nullptr : ws;
+		if (id != isobus::NULL_OBJECT_ID || wasOpen)
+			message(renderer_.edit(*ws, nameOf(ws), id, g_host.image));
+	}
+
 	template<std::size_t N>
 	std::vector<std::array<std::uint8_t, N>> labels(isobus::NAME name) {
 		std::vector<std::array<std::uint8_t, N>> out;
@@ -299,6 +480,7 @@ private:
 		}
 		const std::int32_t address = object ? addressOf(activeWorkingSet) : -1;
 		const bool changed = address != shownAddress_ || mask != shownMask_ || keys != shownKeys_;
+		if (openId_ != isobus::NULL_OBJECT_ID && (address != shownAddress_ || mask != shownMask_)) escape(); // the field has gone
 		if (address != shownAddress_) {
 			listChanged_ = true;
 			g_host.event(ISOSHIM_ACTIVE, address, 0);
@@ -363,7 +545,8 @@ private:
 		std::string screen;
 		if (workingSetObject(activeWorkingSet)) {
 			screen = renderer_.screen(*activeWorkingSet, nameOf(activeWorkingSet), g_config.mask_width, g_config.mask_height,
-			                          g_config.key_width, g_config.key_height, g_host.image);
+			                          g_config.key_width, g_config.key_height, activeWorkingSet->get_object_focus(),
+			                          openId_ != isobus::NULL_OBJECT_ID && openWs_ == activeWorkingSet, g_host.image);
 		} else {
 			screen = "{\"type\":\"screen\",\"ws\":null}";
 		}
@@ -381,7 +564,10 @@ private:
 	std::uint16_t shownMask_ = isobus::NULL_OBJECT_ID, shownKeys_ = isobus::NULL_OBJECT_ID;
 	std::string lastScreen_;
 	isoshim::Renderer renderer_;
-	isobus::EventCallbackHandle repaintHandle_, maskHandle_, keyMaskHandle_;
+	std::deque<std::pair<std::uint32_t, std::function<bool()>>> outbox_;
+	std::shared_ptr<WorkingSet> openWs_;
+	std::uint16_t openId_ = isobus::NULL_OBJECT_ID;
+	isobus::EventCallbackHandle repaintHandle_, maskHandle_, keyMaskHandle_, focusHandle_;
 };
 
 std::shared_ptr<isobus::InternalControlFunction> g_serverCf, g_clientCf;
@@ -420,7 +606,7 @@ bool send_can_message_frame_to_hardware(const CANMessageFrame &frame) {
 
 extern "C" {
 
-int32_t isoshim_version(void) { return 3; }
+int32_t isoshim_version(void) { return 4; }
 
 int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host) {
 	if (!config || !host || !host->send || !host->event || !host->message) return -1;
@@ -473,6 +659,33 @@ int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen) {
 	g_client->get_vt_soft_key_event_dispatcher().add_listener([](const isobus::VirtualTerminalClient::VTKeyEvent &e) {
 		if (e.keyEvent == isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased && e.objectID == 5000)
 			g_client->send_change_active_mask(0, 2000);
+	});
+	// What the implement hears of the operator's input, for the self-test to check:
+	// {"type":"implement","event":"select"|"esc"|"number"|"string","o":id,...}
+	const auto heard = [](const char *event, std::uint16_t id) {
+		auto json = std::make_shared<isoshim::Json>();
+		json->begin_object().key("type").value("implement").key("event").value(event).key("o").value(static_cast<int>(id));
+		return json;
+	};
+	g_client->get_vt_select_input_object_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTSelectInputObjectEvent &e) {
+		auto json = heard("select", e.objectID);
+		json->key("selected").value(e.objectSelected).key("open").value(e.objectOpenForInput).end_object();
+		message(json->str());
+	});
+	g_client->get_vt_esc_message_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTESCMessageEvent &e) {
+		auto json = heard("esc", e.objectID);
+		json->end_object();
+		message(json->str());
+	});
+	g_client->get_vt_change_numeric_value_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTChangeNumericValueEvent &e) {
+		auto json = heard("number", e.objectID);
+		json->key("value").value(static_cast<double>(e.value)).end_object();
+		message(json->str());
+	});
+	g_client->get_vt_change_string_value_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTChangeStringValueEvent &e) {
+		auto json = heard("string", e.objectID);
+		json->key("value").value(isoshim::utf8(e.value)).end_object();
+		message(json->str());
 	});
 	g_client->initialize(false); // updated from isoshim_step, not its own thread
 	return 0;
@@ -556,6 +769,34 @@ int32_t isoshim_button(uint16_t objectId, int32_t state) {
 	const bool sent = g_terminal->key(objectId, state, true);
 	flushTransmit();
 	return sent ? 1 : 0;
+}
+
+int32_t isoshim_select(uint16_t objectId, int32_t open) {
+	if (!g_terminal) return 0;
+	const bool done = g_terminal->select(objectId, open != 0);
+	flushTransmit();
+	return done ? 1 : 0;
+}
+
+int32_t isoshim_set_number(uint16_t objectId, uint32_t value) {
+	if (!g_terminal) return 0;
+	const int result = g_terminal->setNumber(objectId, value);
+	flushTransmit();
+	return result;
+}
+
+int32_t isoshim_set_string(uint16_t objectId, const char *utf8, int32_t len) {
+	if (!g_terminal || !utf8 || len < 0) return 0;
+	const int result = g_terminal->setString(objectId, std::string(utf8, static_cast<std::size_t>(len)));
+	flushTransmit();
+	return result;
+}
+
+int32_t isoshim_escape(void) {
+	if (!g_terminal) return 0;
+	const bool done = g_terminal->escape();
+	flushTransmit();
+	return done ? 1 : 0;
 }
 
 int32_t isoshim_activate(uint64_t name) {

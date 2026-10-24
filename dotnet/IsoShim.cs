@@ -49,4 +49,14 @@ public static unsafe class IsoShim
     [DllImport(Lib)] public static extern int isoshim_soft_key(ushort objectId, int state);
     [DllImport(Lib)] public static extern int isoshim_button(ushort objectId, int state);
     [DllImport(Lib)] public static extern int isoshim_activate(ulong name);
+    [DllImport(Lib)] public static extern int isoshim_select(ushort objectId, int open);
+    [DllImport(Lib)] public static extern int isoshim_set_number(ushort objectId, uint value);
+    [DllImport(Lib)] public static extern int isoshim_set_string(ushort objectId, byte* utf8, int len);
+    [DllImport(Lib)] public static extern int isoshim_escape();
+
+    public static int SetString(ushort objectId, string text)
+    {
+        byte[] utf8 = System.Text.Encoding.UTF8.GetBytes(text);
+        fixed (byte* p = utf8) return isoshim_set_string(objectId, p, utf8.Length);
+    }
 }

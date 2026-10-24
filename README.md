@@ -8,7 +8,7 @@ SocketCAN interface, a USB adapter, or a CAN-to-network gateway over TCP or Wi-F
 **Status:** a working spike becoming a library ([docs/API.md](docs/API.md)). The C interface runs
 a virtual terminal server with a configuration, storage of pool versions through callbacks, the
 working sets as JSON, the active screen as a draw list that a page paints
-([painter/vtpaint.js](painter/vtpaint.js)), soft keys and buttons, and (for the self-test) an
+([painter/vtpaint.js](painter/vtpaint.js)), soft keys, buttons and input fields, and (for the self-test) an
 implement beside it. It is built
 against upstream HEAD and has passed on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro
 (iPadOS 17.7, full AOT), in process and against a real implement over Wi-Fi with delay, loss and
@@ -60,11 +60,13 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 ## Test
 
 **Self-test** (no bus): `IsoShimSpike.RunAll` puts a terminal and an implement in one process,
-C# carrying every frame between them. Five runs: an upload of upstream's VT3 example pool
+C# carrying every frame between them. Six runs: an upload of upstream's VT3 example pool
 (150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
 storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
-and that every callback came on the stepping thread.
+and that every callback came on the stepping thread. The sixth uploads `dotnet/InputTestPool.iop`
+(ours, written by `dotnet/InputTestPool.py`: every kind of input field) and enters values in each,
+checking what the implement hears, what is refused and what the screen shows.
 
 With a pool file, `screens` uploads that pool instead and has the test implement show each of its
 data and alarm masks in turn, for a look at the renderer on other pools: isobus-implement-sim's

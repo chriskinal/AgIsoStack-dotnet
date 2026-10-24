@@ -78,12 +78,45 @@ tap to an object and a later version can patch by id.
 | `poly` | `pts` (x, y pairs), `closed`, `fill line lw` | polygons, needles |
 | `text` | `x y w h`, `s`, `c`, `bg` (absent: transparent), `fw fh` (font cell), `style` (bold, crossed, underlined, italic, inverted, flash), `hj vj` (0 left/top, 1 middle, 2 right/bottom), `wrap` | output and input strings, numbers, lists |
 | `image` | `x y w h`, `img` | picture graphics, fill patterns |
-| `hit` | `x y w h`, `kind` (`button`, `input`, `key`), `latch`, `on` (enabled) | what the operator can touch |
+| `hit` | `x y w h`, `kind` (`button`, `input`, `key`), `latch`, `on` (enabled), `sel` (has the focus), `open` (open for input) | what the operator can touch |
 | `box` | `x y w h`, `label` | an object the renderer does not draw: a labelled box, never dropped |
 
 Fonts: the standard's fonts are fixed cells (6 x 8 up to 128 x 192); the painter fills the cell
 with a monospace face, as espVT does with one scaled font. Numbers are formatted natively (scale,
 offset, decimals, exponential, leading zeros, blank zero, truncation).
+
+## Input fields
+
+A tap on an `input` hit calls `isoshim_select(id, 1)`: the field takes the focus, the implement
+hears it selected and open, and the host gets an edit message describing it, from inside that
+call. The page shows an editor for it and answers with a value or an escape; either closes it,
+and the host gets `{"type":"edit","ws":...,"o":null}`. The implement can also open a field
+itself (Select Input Object); the same edit message follows.
+
+```json
+{"type":"edit","ws":"A0001000AFE00002","o":9000,"kind":"number","value":50,"min":0,"max":100,"offset":0,"scale":0.5,"decimals":1,"text":"25.0"}
+{"type":"edit","ws":"...","o":8000,"kind":"string","value":"HELLO","length":10,"chars":"ABC...Z ","only":true}
+{"type":"edit","ws":"...","o":7000,"kind":"bool","value":0}
+{"type":"edit","ws":"...","o":10000,"kind":"list","value":0,"w":200,"h":20,"options":[[...items...],null,...]}
+```
+
+- **number**: values are raw; what the operator sees is `(raw + offset) * scale` to `decimals`
+  places. `isoshim_set_number(id, raw)` takes `min <= raw <= max`.
+- **string**: `value` has its padding spaces trimmed; `length` is the most characters it holds;
+  `chars` with `only` true are the characters allowed, with `only` false the ones refused.
+  `isoshim_set_string(id, utf8, len)`; stored in the field's own encoding (ISO 8859-1, or UTF-16
+  when the pool's value is), padded with spaces.
+- **bool**: `isoshim_set_number(id, 0 or 1)`; a touch UI toggles without an editor.
+- **list**: each option is a draw list in the field's size at 0,0, `null` for an empty place.
+  `isoshim_set_number(id, index)`.
+
+The set calls return 1 (entered, sent), -1 (not a valid value: the field is unchanged and stays
+open) or 0 (not an enabled input on the current screen). A value can be set without selecting
+first; the field is selected on the way. `isoshim_escape()` abandons the open field (VT ESC).
+Moving the focus away from an open field, or the mask changing under it, escapes it. Macros run
+on selection, deselection, entry (of a value and of a new value) and escape. Messages the stack
+cannot send at once (a multi-frame message while the last one to that implement is closing) wait
+in order for a later step.
 
 A reference painter (`painter/vtpaint.js`, Canvas 2D, MIT) lives here for the tests and as the
 starting point for AgOpenWeb's page.

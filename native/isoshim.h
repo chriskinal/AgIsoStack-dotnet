@@ -86,7 +86,7 @@ typedef struct isoshim_vt_config {
 	uint8_t reserved[3];
 } isoshim_vt_config;
 
-ISOSHIM_API int32_t isoshim_version(void);
+ISOSHIM_API int32_t isoshim_version(void); // 4
 // 0: started. -1: bad arguments, -2: already running.
 ISOSHIM_API int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host);
 // Self-test only: upstream's VT client on channel 1 with this pool; after isoshim_vt_start.
@@ -113,11 +113,26 @@ enum isoshim_key_state {
 	ISOSHIM_HELD = 2,    // still pressed: repeat about every 200 ms while held
 	ISOSHIM_ABORTED = 3, // the press ended without a release (the finger slid off, the link went)
 };
-// 1: sent.
+// 1: sent (or queued to send at the next step).
 ISOSHIM_API int32_t isoshim_soft_key(uint16_t objectId, int32_t state);
 ISOSHIM_API int32_t isoshim_button(uint16_t objectId, int32_t state);
 // Which implement is shown, by its NAME. 1: it is now active.
 ISOSHIM_API int32_t isoshim_activate(uint64_t name);
+
+// Input fields, in the active implement's pool and on its screen, enabled (a hit with kind input).
+// Select one, or a button, or nothing (0xFFFF). open: an editor is up for it; the host gets an
+// edit message describing the field, and one with "o":null when it closes. 1: done.
+ISOSHIM_API int32_t isoshim_select(uint16_t objectId, int32_t open);
+// Enter a value; the field is selected first if it was not, and closes. Input number: the raw
+// value (before offset and scale), within its minimum and maximum; input boolean: 0 or 1; input
+// list: the item's index. 1: entered and sent to the implement; -1: not a valid value; 0: not an
+// enabled input on the screen.
+ISOSHIM_API int32_t isoshim_set_number(uint16_t objectId, uint32_t value);
+// Enter text (UTF-8) in an input string: at most its length in characters, only characters its
+// input attributes allow and its encoding holds. Results as isoshim_set_number.
+ISOSHIM_API int32_t isoshim_set_string(uint16_t objectId, const char *utf8, int32_t len);
+// Abandon the open field (VT ESC). 1: one was open.
+ISOSHIM_API int32_t isoshim_escape(void);
 
 #ifdef __cplusplus
 }

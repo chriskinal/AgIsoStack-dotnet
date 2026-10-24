@@ -114,6 +114,8 @@ upstream pull request with a test; the wrapper's terminal will meet them.
 | 5 | Control Audio Signal and Set Audio Volume are acknowledged and dropped, with nothing to override | alarms |
 | 6 | Every Change Numeric Value repaints, changed or not (upstream #796) | drawing |
 | 7 | A long ETP stream during an upload is drained in one pass, starving other work (espVT: at most 32 per pass) | not seen on the bench |
+| 8 | The implement's ESC command (0x92) is not handled: an open field is not closed and no VT ESC message is sent back (found here, 2026-10-24) | input |
+| 9 | Sending a second multi-frame message to an implement while the last one is closing fails (one session per pair); the server's own sends do not retry. The wrapper queues the operator's messages (`Terminal::post`) (found here, 2026-10-24) | input |
 
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one

@@ -171,6 +171,14 @@ function vtItem(ctx, it, images) {
     }
     case "hit":
       if (!it.on) { ctx.fillStyle = "rgba(128,128,128,0.5)"; ctx.fillRect(it.x, it.y, it.w, it.h); }
+      if (it.sel) {
+        // The focus: a frame around the field, solid while it is open for input.
+        ctx.setLineDash(it.open ? [] : [4, 3]);
+        ctx.strokeStyle = "#ff8c00";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(it.x + 1, it.y + 1, it.w - 2, it.h - 2);
+        ctx.setLineDash([]);
+      }
       break;
     case "box":
       ctx.setLineDash([4, 3]);

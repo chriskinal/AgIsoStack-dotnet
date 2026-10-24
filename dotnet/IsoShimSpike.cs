@@ -24,6 +24,8 @@ public static unsafe class IsoShimSpike
     // What the terminal reported: the last working set list, every distinct screen, the pictures.
     static string? workingSets;
     static readonly List<string> screens = new();
+    // The input run: edit messages, and what the test implement heard.
+    static readonly List<string> edits = new(), heard = new();
     static readonly Dictionary<uint, (int W, int H, byte[] Rgba)> images = new();
     // Stored pool versions, by NAME and label, as a host would keep them on disk.
     static readonly Dictionary<(ulong Name, string Label), List<byte>> store = new();
@@ -65,6 +67,8 @@ public static unsafe class IsoShimSpike
         string s = Encoding.UTF8.GetString(json, len);
         if (s.StartsWith("{\"type\":\"workingSets\"")) workingSets = s;
         else if (s.StartsWith("{\"type\":\"screen\"") && !screens.Contains(s)) screens.Add(s);
+        else if (s.StartsWith("{\"type\":\"edit\"")) edits.Add(s);
+        else if (s.StartsWith("{\"type\":\"implement\"")) heard.Add(s);
     }
 
     [UnmanagedCallersOnly]
@@ -119,10 +123,10 @@ public static unsafe class IsoShimSpike
         return 1;
     }
 
-    static byte[] LoadPool()
+    static byte[] LoadPool(string name = "VT3TestPool.iop")
     {
-        using Stream s = typeof(IsoShimSpike).Assembly.GetManifestResourceStream("VT3TestPool.iop")
-            ?? throw new InvalidOperationException("VT3TestPool.iop not embedded");
+        using Stream s = typeof(IsoShimSpike).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"{name} not embedded");
         using var m = new MemoryStream();
         s.CopyTo(m);
         return m.ToArray();
@@ -140,6 +144,7 @@ public static unsafe class IsoShimSpike
         ok &= Run(log, 255, stopWhenParsing: true);
         ok &= Run(log, 255);
         ok &= Run(log, 255, fromStore: true);
+        ok &= RunInput(log);
         if (ScreenDir != null) WriteScreens(log);
         log(ok ? "ALL PASS" : "SOME FAILED");
         return ok;
@@ -215,6 +220,104 @@ public static unsafe class IsoShimSpike
             callbackOffThread ? "FAIL: a callback came on another thread" :
             !stored ? (fromStore ? "FAIL: the pool was not loaded from the store" : "FAIL: the pool was not stored") :
             "FAIL: a mask was not drawn");
+        return pass;
+    }
+
+    /// <summary>The operator's input on InputTestPool.iop (InputTestPool.py): selecting, numbers,
+    /// strings, a boolean, a list and escape; each checked by what the implement hears and what
+    /// the terminal draws.</summary>
+    static bool RunInput(Action<string> log)
+    {
+        log("--- input fields");
+        stepThread = Environment.CurrentManagedThreadId;
+        callbackOffThread = false;
+        mask = poolBad = poolObjects = -1;
+        screens.Clear();
+        edits.Clear();
+        heard.Clear();
+        store.Clear();
+        byte[] pool = LoadPool("InputTestPool.iop");
+        var config = new Config();
+        var host = new Host
+        {
+            Send = &OnSend, Event = &OnEvent, Message = &OnMessage, Image = &OnImage,
+            Save = &OnSave, Load = &OnLoad, List = &OnList, Remove = &OnRemove,
+        };
+        int rc = isoshim_vt_start(&config, &host);
+        if (rc == 0)
+            fixed (byte* p = pool)
+                rc = isoshim_test_implement(p, pool.Length);
+        if (rc != 0) { log($"FAIL start returned {rc}"); isoshim_stop(); return false; }
+        var clock = Stopwatch.StartNew();
+        bool StepUntil(Func<bool> done, double ms = 2000)
+        {
+            for (var end = clock.Elapsed.TotalMilliseconds + ms; clock.Elapsed.TotalMilliseconds < end;)
+            {
+                if (done()) return true;
+                isoshim_step();
+                Thread.Sleep(2);
+            }
+            return done();
+        }
+        string Screen() => screens.LastOrDefault(x => x.Contains("\"mask\":1000,")) ?? "";
+        bool ok = StepUntil(() => Screen().Length > 0, 15000);
+        log($"{clock.Elapsed.TotalMilliseconds,7:F0} ms  {(ok ? "input mask drawn" : "FAIL: the input mask was not drawn")}");
+        int failures = ok ? 0 : 1;
+        void Check(string what, bool pass)
+        {
+            if (!pass) failures++;
+            log($"  {(pass ? "ok  " : "FAIL")} {what}");
+        }
+        bool Heard(string fragment) => StepUntil(() => heard.Any(h => h.Contains(fragment)));
+        bool Drawn(string fragment) => StepUntil(() => Screen().Contains(fragment));
+        string LastEdit() => edits.LastOrDefault() ?? "";
+
+        if (ok)
+        {
+            heard.Clear();
+            Check("select Rate (9000) open: 1", isoshim_select(9000, 1) == 1);
+            Check("the implement hears it selected, open", Heard("\"select\",\"o\":9000,\"selected\":true,\"open\":true"));
+            Check("edit message: a number, 0 to 100, scale 0.5", LastEdit().Contains("\"o\":9000,\"kind\":\"number\",\"value\":50,\"min\":0,\"max\":100,\"offset\":0,\"scale\":0.5"));
+            Check("the screen marks it selected and open", Drawn("\"o\":9000,\"x\":150,\"y\":40,\"w\":120,\"h\":20,\"kind\":\"input\",\"on\":true,\"sel\":true,\"open\":true"));
+            Check("Rate 101, above its maximum: -1", isoshim_set_number(9000, 101) == -1);
+            Check("Rate 80: 1", isoshim_set_number(9000, 80) == 1);
+            Check("the implement hears 80", Heard("\"number\",\"o\":9000,\"value\":80"));
+            Check("the screen shows 40.0", Drawn("\"s\":\"40.0\""));
+            Check("the editor closes (o null)", LastEdit().Contains("\"o\":null"));
+            Check("Locked (9002), disabled: 0", isoshim_set_number(9002, 1) == 0);
+            Check("Count (9001, a variable) 12, not selected first: 1", isoshim_set_number(9001, 12) == 1);
+            Check("the implement hears 12", Heard("\"number\",\"o\":9001,\"value\":12"));
+            Check("the screen shows 12", Drawn("\"s\":\"12\""));
+            Check("Name (8000) lower case, not in its valid characters: -1", SetString(8000, "hello") == -1);
+            Check("Name longer than its 10 characters: -1", SetString(8000, "MUCH TOO LONG") == -1);
+            Check("Name WORLD: 1", SetString(8000, "WORLD") == 1);
+            Check("the implement hears WORLD, padded", Heard("\"string\",\"o\":8000,\"value\":\"WORLD     \""));
+            Check("the screen shows WORLD", Drawn("\"s\":\"WORLD     \""));
+            Check("Note (8001, a variable) Grüße: 1", SetString(8001, "Grüße") == 1);
+            Check("the implement hears Grüße in Latin-1", Heard("\"string\",\"o\":8001,\"value\":\"Grüße   \""));
+            Check("Note with a character outside Latin-1: -1", SetString(8001, "€") == -1);
+            Check("Enable (7000) 2: -1", isoshim_set_number(7000, 2) == -1);
+            Check("Enable 1: 1", isoshim_set_number(7000, 1) == 1);
+            Check("the implement hears 1", Heard("\"number\",\"o\":7000,\"value\":1"));
+            Check("select Crop (10000) open: 1", isoshim_select(10000, 1) == 1);
+            Check("edit message: a list of three, each drawn", LastEdit().Contains("\"kind\":\"list\",\"value\":0,\"w\":200,\"h\":20,\"options\":[[")
+                && LastEdit().Contains("\"s\":\"Canola\""));
+            Check("Crop 3, past the end: -1", isoshim_set_number(10000, 3) == -1);
+            Check("Crop 2: 1", isoshim_set_number(10000, 2) == 1);
+            Check("the implement hears 2", Heard("\"number\",\"o\":10000,\"value\":2"));
+            Check("the screen shows Canola", Drawn("\"s\":\"Canola\""));
+            Check("select Rate open, then escape: 1", isoshim_select(9000, 1) == 1 && isoshim_escape() == 1);
+            Check("the implement hears ESC", Heard("\"esc\",\"o\":9000"));
+            Check("the editor closes", LastEdit().Contains("\"o\":null"));
+            Check("escape with nothing open: 0", isoshim_escape() == 0);
+            Check("Rate is still 40.0 and still selected, not open", Drawn("\"s\":\"40.0\"") &&
+                Drawn("\"o\":9000,\"x\":150,\"y\":40,\"w\":120,\"h\":20,\"kind\":\"input\",\"on\":true,\"sel\":true}"));
+            Check("select nothing: 1, the implement hears Rate deselected", isoshim_select(0xFFFF, 0) == 1 && Heard("\"select\",\"o\":9000,\"selected\":false"));
+        }
+        isoshim_stop();
+        log($"every callback on the stepping thread: {(callbackOffThread ? "no" : "yes")}");
+        bool pass = failures == 0 && !callbackOffThread;
+        log(pass ? "PASS: input fields" : $"FAIL: input fields, {failures} checks failed");
         return pass;
     }
 

@@ -18,6 +18,7 @@
     <Compile Include="../IsoShimSpike.cs" />
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
+    <EmbeddedResource Include="../InputTestPool.iop" LogicalName="InputTestPool.iop" />
     <AndroidNativeLibrary Include="../../native/build-android/libisoshim.so" Abi="arm64-v8a" />
   </ItemGroup>
 </Project>

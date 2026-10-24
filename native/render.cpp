@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <set>
 
 #include "isobus/isobus/isobus_virtual_terminal_objects.hpp"
 #include "isobus/isobus/isobus_virtual_terminal_server_managed_working_set.hpp"
@@ -131,6 +132,8 @@ using WS = VirtualTerminalServerManagedWorkingSet;
 constexpr int MaxDepth = 32; // pools can point in circles
 constexpr double Pi = 3.14159265358979323846;
 
+} // namespace
+
 // Text in a pool is ISO 8859-1, or UTF-16 little endian after a 0xFF 0xFE mark: UTF-8 out.
 std::string utf8(const std::string &in) {
 	std::string out;
@@ -159,6 +162,54 @@ std::string utf8(const std::string &in) {
 	}
 	return out;
 }
+
+// The characters a pool string holds: wide ones after the mark are two bytes each.
+std::size_t textLength(const std::string &raw) {
+	if (raw.size() >= 2 && static_cast<unsigned char>(raw[0]) == 0xFF && static_cast<unsigned char>(raw[1]) == 0xFE) return (raw.size() - 2) / 2;
+	return raw.size();
+}
+
+// UTF-8 in, Unicode code points out; a malformed sequence becomes U+FFFD, one byte at a time.
+std::vector<std::uint32_t> codePoints(const std::string &text) {
+	std::vector<std::uint32_t> out;
+	for (std::size_t i = 0; i < text.size();) {
+		const unsigned char c = static_cast<unsigned char>(text[i]);
+		const std::size_t extra = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : 4;
+		std::uint32_t cp = c & (0x7F >> extra);
+		bool ok = extra < 4 && i + extra < text.size();
+		for (std::size_t k = 1; ok && k <= extra; ++k) {
+			const unsigned char d = static_cast<unsigned char>(text[i + k]);
+			ok = (d >> 6) == 2;
+			cp = (cp << 6) | (d & 0x3F);
+		}
+		out.push_back(ok ? cp : 0xFFFD);
+		i += ok ? extra + 1 : 1;
+	}
+	return out;
+}
+
+bool poolText(const std::string &text, const std::string &current, std::string &out) {
+	const bool wide = current.size() >= 2 && static_cast<unsigned char>(current[0]) == 0xFF && static_cast<unsigned char>(current[1]) == 0xFE;
+	const std::size_t length = textLength(current);
+	const auto cps = codePoints(text);
+	if (cps.size() > length) return false;
+	out.clear();
+	if (wide) out += "\xFF\xFE";
+	for (std::size_t i = 0; i < length; ++i) {
+		const std::uint32_t c = i < cps.size() ? cps[i] : ' ';
+		if (wide) {
+			if (c > 0xFFFF || (c >= 0xD800 && c < 0xE000)) return false;
+			out += static_cast<char>(c & 0xFF);
+			out += static_cast<char>(c >> 8);
+		} else {
+			if (c > 0xFF) return false;
+			out += static_cast<char>(c);
+		}
+	}
+	return true;
+}
+
+namespace {
 
 std::string formatNumber(const NumberVTObject &n, std::uint32_t raw, int fieldChars) {
 	const int decimals = std::min<int>(n.get_number_of_decimals(), 7);
@@ -190,6 +241,9 @@ struct Renderer::Pass {
 	Json &json;
 	isoshim_image_fn image;
 	const std::map<std::uint16_t, std::shared_ptr<VTObject>> &tree;
+	std::uint16_t focus = NULL_OBJECT_ID; // the selected input, marked on its hit
+	bool open = false;                    // and whether it is open for input
+	std::set<std::uint16_t> *touchable = nullptr; // collects the enabled inputs and buttons drawn
 
 	std::shared_ptr<VTObject> find(std::uint16_t id) const {
 		const auto it = tree.find(id);
@@ -234,6 +288,11 @@ struct Renderer::Pass {
 		box("hit", id, x, y, w, h);
 		json.key("kind").value(kind).key("on").value(on);
 		if (latch) json.key("latch").value(true).key("latched").value(latched);
+		if (id == focus) {
+			json.key("sel").value(true);
+			if (open) json.key("open").value(true);
+		}
+		if (on && touchable) touchable->insert(id);
 		json.end_object();
 	}
 	void labelled(std::uint16_t id, int x, int y, int w, int h, const char *label) {
@@ -288,9 +347,10 @@ struct Renderer::Pass {
 };
 
 std::string Renderer::screen(WS &ws, std::uint64_t name, std::uint16_t maskWidth, std::uint16_t maskHeight, std::uint8_t keyWidth,
-                             std::uint8_t keyHeight, isoshim_image_fn image) {
+                             std::uint8_t keyHeight, std::uint16_t focus, bool open, isoshim_image_fn image) {
 	Json json;
-	Pass pass{ ws, json, image, ws.get_object_tree() };
+	touchable_.clear();
+	Pass pass{ ws, json, image, ws.get_object_tree(), focus, open, &touchable_ };
 	json.begin_object().key("type").value("screen").key("ws").value(hexName(name));
 
 	const auto workingSet = std::static_pointer_cast<WorkingSet>(ws.get_working_set_object());
@@ -344,6 +404,71 @@ std::string Renderer::screen(WS &ws, std::uint64_t name, std::uint16_t maskWidth
 			json.end_array().end_object();
 		}
 		json.end_array().end_object();
+	}
+	json.end_object();
+	return json.str();
+}
+
+// The editor for one input field (docs/API.md, the edit message).
+std::string Renderer::edit(WS &ws, std::uint64_t name, std::uint16_t id, isoshim_image_fn image) {
+	Json json;
+	Pass pass{ ws, json, image, ws.get_object_tree() };
+	const auto object = pass.find(id);
+	json.begin_object().key("type").value("edit").key("ws").value(hexName(name)).key("o");
+	if (!object) {
+		json.null().end_object();
+		return json.str();
+	}
+	json.value(static_cast<int>(id));
+	switch (object->get_object_type()) {
+		case Type::InputNumber: {
+			const auto n = std::static_pointer_cast<InputNumber>(object);
+			const std::uint32_t value = pass.number(n->get_variable_reference(), n->get_value());
+			json.key("kind").value("number").key("value").value(static_cast<double>(value));
+			json.key("min").value(static_cast<double>(n->get_minimum_value())).key("max").value(static_cast<double>(n->get_maximum_value()));
+			json.key("offset").value(static_cast<double>(n->get_offset())).key("scale").value(static_cast<double>(n->get_scale()));
+			json.key("decimals").value(static_cast<int>(n->get_number_of_decimals()));
+			json.key("text").value(formatNumber(*n, value, 0));
+			break;
+		}
+		case Type::InputBoolean: {
+			const auto b = std::static_pointer_cast<InputBoolean>(object);
+			json.key("kind").value("bool").key("value").value(static_cast<int>(pass.number(b->get_variable_reference(), b->get_value()) != 0));
+			break;
+		}
+		case Type::InputString: {
+			const auto s = std::static_pointer_cast<InputString>(object);
+			const auto variable = pass.find<StringVariable>(s->get_variable_reference(), Type::StringVariable);
+			const std::string raw = variable ? variable->get_value() : s->get_value();
+			std::string value = utf8(raw);
+			while (!value.empty() && value.back() == ' ') value.pop_back();
+			json.key("kind").value("string").key("value").value(value).key("length").value(static_cast<int>(textLength(raw)));
+			if (const auto a = pass.find<InputAttributes>(s->get_input_attributes(), Type::InputAttributes)) {
+				json.key("chars").value(utf8(a->get_validation_string()));
+				json.key("only").value(a->get_validation_type() == InputAttributes::ValidationType::ValidCharactersAreListed);
+			}
+			break;
+		}
+		case Type::InputList: {
+			// Each item drawn on its own, in the field's size, at 0,0; an empty place is null.
+			const auto l = std::static_pointer_cast<InputList>(object);
+			json.key("kind").value("list").key("value").value(static_cast<int>(pass.number(l->get_variable_reference(), l->get_value())));
+			json.key("w").value(static_cast<int>(object->get_width())).key("h").value(static_cast<int>(object->get_height()));
+			json.key("options").begin_array();
+			for (std::uint16_t i = 0; i < object->get_number_children(); ++i) {
+				const std::uint16_t item = object->get_child_id(i);
+				if (item == NULL_OBJECT_ID || !pass.find(item)) {
+					json.null();
+					continue;
+				}
+				json.begin_array();
+				draw(pass, item, 0, 0, 1);
+				json.end_array();
+			}
+			json.end_array();
+			break;
+		}
+		default: json.key("kind").null(); break;
 	}
 	json.end_object();
 	return json.str();

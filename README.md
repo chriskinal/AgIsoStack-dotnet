@@ -5,15 +5,15 @@ interface over the stack (`native/`), called from C# by P/Invoke (`dotnet/`), on
 Android, Linux and Windows. The caller carries the CAN frames, so the bus can be anything: a
 SocketCAN interface, a USB adapter, or a CAN-to-network gateway over TCP or Wi-Fi.
 
-**Status:** a working spike becoming a library ([docs/API.md](docs/API.md)). The C interface runs
-a virtual terminal server with a configuration, storage of pool versions through callbacks, the
-working sets as JSON, the active screen as a draw list that a page paints
-([painter/vtpaint.js](painter/vtpaint.js)), soft keys, buttons, input fields, alarms and audio, and (for the self-test) an
-implement beside it. It is built
-against upstream HEAD and has passed on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro
-(iPadOS 17.7, full AOT), in process and against a real implement over Wi-Fi with delay, loss and
-link cuts ([docs/RESULTS.md](docs/RESULTS.md)). What comes next is in [docs/PLAN.md](docs/PLAN.md):
-the real API surface, then the offer upstream.
+**Status:** a virtual terminal for AgOpenWeb's VT card ([docs/API.md](docs/API.md)): a
+configuration, stored pool versions, the connected implements, the active screen as a draw list
+that a page paints ([painter/vtpaint.js](painter/vtpaint.js)), soft keys, buttons, input fields,
+alarms and audio; in C# one class, `VirtualTerminal`, packaged with its native libraries
+(`AgIsoStack.VirtualTerminal`). Built against upstream HEAD. The first surface (the spike) passed
+on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro (iPadOS 17.7, full AOT), in process and
+against a real implement over Wi-Fi with delay, loss and link cuts
+([docs/RESULTS.md](docs/RESULTS.md)); the current one so far on the Mac. What comes next is in
+[docs/PLAN.md](docs/PLAN.md).
 
 MIT, like AgIsoStack++.
 
@@ -28,18 +28,25 @@ MIT, like AgIsoStack++.
   every few milliseconds on a thread of its own (2 ms in the bench), not from a UI frame timer.
 - **Stop at any point.** The terminal joins any object pool parse still running before it is
   destroyed (upstream's managed working set does not; see docs/RESULTS.md).
-- **255 frames per clear-to-send** (`isoshim_set_packets_per_cts`): with the stack's default of 16,
-  an upload is held to about half the bus rate in process and pays a round trip per 16 frames
-  over a network link.
+- **255 frames per clear-to-send** by default (the config's `packets_per_cts`): with the stack's
+  own 16, an upload is held to about half the bus rate in process and pays a round trip per 16
+  frames over a network link.
 
 ## Build
 
 ```sh
-native/build.sh mac        # native/build-mac/libisoshim.dylib
+native/build.sh mac        # native/build-mac/libisoshim.dylib (arm64 and x86_64)
 native/build.sh ios        # native/build-ios/libisoshim-all.a (the shim and the stack, one archive)
-native/build.sh android    # native/build-android/libisoshim.so (arm64-v8a; $ANDROID_NDK or the newest NDK)
-native/build.sh linux      # native/build-linux/libisoshim.so
+native/build.sh android    # native/build-android-ABI/libisoshim.so (arm64-v8a, armeabi-v7a, x86_64)
+native/build.sh linux      # native/build-linux/libisoshim.so (on Linux)
+cd dotnet/AgIsoStack.VirtualTerminal && dotnet pack -c Release -o OUT   # the package
 ```
+
+The package (`net10.0`, `net10.0-ios`, `net10.0-android`) takes each native library that is
+built: macOS under `runtimes/osx`, iOS under `runtimes/ios-arm64` with a `buildTransitive`
+target that links it into the app, Android inside the `.aar`. Linux and Windows libraries go in
+the same way once built (`native/build-linux/libisoshim.so`, `native/build-windows/isoshim.dll`);
+neither is built on the Mac yet (PLAN.md, tests in CI).
 
 The stack is fetched at the commit pinned in `native/CMakeLists.txt`;
 `-DISOSHIM_STACK_DIR=/path/to/AgIsoStack-plus-plus` builds against a local checkout. Needs CMake
@@ -57,10 +64,35 @@ With Xcode newer than the .NET iOS workload supports, add `-p:ValidateXcodeVersi
 The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isostack_tests`
 (Android).
 
+## Use
+
+```csharp
+using AgIsoStack;
+
+var vt = new VirtualTerminal(new VirtualTerminalOptions
+{
+    Send = (channel, id, data, extended) => gateway.Send(id, data),   // the terminal's frames out
+    Store = new FilePoolStore(Path.Combine(appData, "pools")),         // stored pool versions
+});
+vt.Message += json => page.Post(json);           // screens, editors, working sets, alarms: as JSON
+vt.Image += image => page.PostImage(image);      // pictures, RGBA, before the screens that use them
+vt.AlarmsChanged += alarms => ShowOverAnyCard(alarms);
+vt.Start();
+gateway.FrameReceived += (id, data) => vt.Receive(id, data);           // frames in, any thread
+// The page's taps and entries:
+await vt.SoftKeyAsync(5000, KeyState.Pressed);
+await vt.SelectAsync(9000, open: true);
+var result = await vt.SetNumberAsync(9000, 80);   // Entered, Invalid, NotAnInput
+vt.Stop();
+```
+
+The terminal has one thread of its own: it runs the stack and raises every event, in order;
+calls come from any thread. One terminal per process. Details in [docs/API.md](docs/API.md).
+
 ## Test
 
 **Self-test** (no bus): `IsoShimSpike.RunAll` puts a terminal and an implement in one process,
-C# carrying every frame between them. Seven runs: an upload of upstream's VT3 example pool
+C# carrying every frame between them. Eight runs: an upload of upstream's VT3 example pool
 (150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
 storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
@@ -68,7 +100,10 @@ and that every callback came on the stepping thread. The sixth uploads `testpool
 (ours, written by `testpools/inputs.py`: every kind of input field) and enters values in each,
 checking what the implement hears, what is refused and what the screen shows. The seventh uploads
 `testpools/drawing.iop` and checks the alarms message as its alarm mask comes and goes, and that
-the implement's audio and volume commands reach the host.
+the implement's audio and volume commands reach the host. The eighth drives the C# class,
+`VirtualTerminal`, as a host would: two sessions with one store (the second loads the pool
+the first stored), input results, a call from inside a handler, stop from either thread, and
+every event on the terminal's one thread.
 
 With a pool file, `screens` uploads that pool instead and has the test implement show each of its
 data and alarm masks in turn. `bench/pools.sh` does that for every pool in `testpools/`: our

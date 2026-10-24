@@ -12,7 +12,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using static IsoShim;
+using AgIsoStack.Interop;
+using static AgIsoStack.Interop.IsoShim;
 
 public static unsafe class IsoShimSpike
 {
@@ -150,6 +151,7 @@ public static unsafe class IsoShimSpike
         ok &= Run(log, 255, fromStore: true);
         ok &= RunInput(log);
         ok &= RunAlarms(log);
+        ok &= VirtualTerminalTest.Run(log);
         if (ScreenDir != null) WriteScreens(log);
         log(ok ? "ALL PASS" : "SOME FAILED");
         return ok;

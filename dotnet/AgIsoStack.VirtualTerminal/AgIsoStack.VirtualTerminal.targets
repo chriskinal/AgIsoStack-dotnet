@@ -1,0 +1,6 @@
+<Project>
+  <!-- From the package (buildTransitive/): links the terminal's static library into an iOS app. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-ios'))">
+    <NativeReference Include="$(MSBuildThisFileDirectory)../../runtimes/ios-arm64/native/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
+  </ItemGroup>
+</Project>

@@ -54,7 +54,9 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    the native side (above). Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
    with the native libraries per runtime. Done: config, storage, working sets, the draw list,
    soft keys and buttons, input fields (select, numbers, strings, booleans, lists, escape),
-   alarms and audio. Next: the C# package. The terminal is AgOpenWeb's VT card, in its backend
+   alarms and audio, and the C# package (`AgIsoStack.VirtualTerminal`: macOS, iOS and three
+   Android ABIs so far). Next: the self-test on the tablets and the bench on this surface, Linux
+   and Windows libraries (item 3), then merge to main. The terminal is AgOpenWeb's VT card, in its backend
    (it replaces the `aow-vtd` daemon once planned): any implement, ISOBUS or DIY, talks to
    AgOpenWeb directly (decided 2026-10-24).
 2. **The client side**, for implements in .NET (the stack's VT client and task controller
@@ -120,7 +122,7 @@ upstream pull request with a test; the wrapper's terminal will meet them.
 | 7 | A long ETP stream during an upload is drained in one pass, starving other work (espVT: at most 32 per pass) | not seen on the bench |
 | 8 | The implement's ESC command (0x92) is not handled: an open field is not closed and no answer is sent. The wrapper answers it from its own listener (found here, 2026-10-24) | input |
 | 9 | Sending a second multi-frame message to an implement while the last one is closing fails (one session per pair); the server's own sends do not retry. The wrapper queues the operator's messages (`Terminal::post`) (found here, 2026-10-24) | input |
-| 10 | The pool parser checks an alarm mask's acoustic signal but never stores it (`set_signal_priority` is not called), so every alarm mask reports signal 0, the highest (found here, 2026-10-24; a one-line fix) | alarms |
+| 10 | The pool parser checks an alarm mask's acoustic signal but never stores it (`set_signal_priority` is not called), so every alarm mask reports signal 0, the highest (found here, 2026-10-24; fix offered upstream with the enum, which numbered lowest 3 and none 4: [#803](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/803)) | alarms |
 
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one

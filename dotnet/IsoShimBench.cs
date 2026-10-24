@@ -12,7 +12,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
-using static IsoShim;
+using AgIsoStack.Interop;
+using static AgIsoStack.Interop.IsoShim;
 
 public static unsafe class IsoShimBench
 {

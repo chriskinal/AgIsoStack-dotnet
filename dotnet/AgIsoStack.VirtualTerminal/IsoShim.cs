@@ -1,6 +1,10 @@
-// The native interface (native/isoshim.h) as P/Invoke declarations, shared by the self-test and the
-// bench. Callbacks are static [UnmanagedCallersOnly] methods (required under iOS AOT).
+// The native interface (native/isoshim.h) as P/Invoke declarations: what VirtualTerminal is built
+// on, and what the self-test and the bench drive directly. Callbacks are static
+// [UnmanagedCallersOnly] methods (required under iOS AOT). Everything but isoshim_receive and
+// isoshim_set_log belongs to the thread that calls isoshim_step.
 using System.Runtime.InteropServices;
+
+namespace AgIsoStack.Interop;
 
 public static unsafe class IsoShim
 {

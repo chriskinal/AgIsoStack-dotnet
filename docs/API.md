@@ -142,3 +142,19 @@ starting point for AgOpenWeb's page.
    requests.
 5. The C# package: one `VirtualTerminal` class over the C interface, native libraries per
    runtime, NuGet-shaped.
+
+## The C# package
+
+`dotnet/AgIsoStack.VirtualTerminal` (package `AgIsoStack.VirtualTerminal`; README.md has an
+example). `VirtualTerminal` owns a thread that steps the stack every few milliseconds, at once
+when a frame arrives or a call is queued. Every event and every `IPoolStore` call comes on that
+thread, in order; a handler that throws is reported through `HandlerFailed`. Calls
+(`SoftKeyAsync`, `SelectAsync`, `SetNumberAsync`, ...) come from any thread and complete when
+the terminal has done them; from a handler they run at once. `InvokeAsync` runs code there, for
+the raw interface (`AgIsoStack.Interop.IsoShim`). `Stop` from another thread waits for the
+terminal to end; from the terminal's own thread (code that resumed there after awaiting
+something a handler completed) it only asks. `Message` carries every message as JSON, for the
+page; `WorkingSetsChanged`, `AlarmsChanged`, `Audio`, `Volume`, `AddressClaimed`, `PoolLoaded`,
+`PoolRejected` and `ImplementLost` are the ones the host itself acts on, typed. Stores:
+`FilePoolStore` (a folder per NAME, a file per label) and `MemoryPoolStore`. One terminal per
+process: the native stack is one.

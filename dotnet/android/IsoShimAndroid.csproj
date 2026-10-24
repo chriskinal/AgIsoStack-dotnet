@@ -14,12 +14,12 @@
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../IsoShim.cs" />
+    <ProjectReference Include="../AgIsoStack.VirtualTerminal/AgIsoStack.VirtualTerminal.csproj" />
+    <Compile Include="../VirtualTerminalTest.cs" />
     <Compile Include="../IsoShimSpike.cs" />
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
     <EmbeddedResource Include="../../testpools/inputs.iop" LogicalName="inputs.iop" />
     <EmbeddedResource Include="../../testpools/drawing.iop" LogicalName="drawing.iop" />
-    <AndroidNativeLibrary Include="../../native/build-android/libisoshim.so" Abi="arm64-v8a" />
   </ItemGroup>
 </Project>

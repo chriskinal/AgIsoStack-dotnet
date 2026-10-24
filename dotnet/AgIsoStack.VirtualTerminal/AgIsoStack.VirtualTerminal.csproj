@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The terminal for a .NET host: VirtualTerminal over the native library (native/isoshim.h).
+       net10.0 for the desktop (the library under runtimes/RID/native), net10.0-ios (the static
+       library linked into the app) and net10.0-android (one .so per ABI). The iOS and Android
+       targets build only where their workloads are (on a Mac: -p:DesktopOnly=true leaves them out,
+       as AgOpenWeb does). The native libraries come from native/build.sh; `dotnet pack` takes the
+       ones that are built. -->
+  <PropertyGroup>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$(DesktopOnly)' != 'true'">net10.0;net10.0-ios;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX')) Or '$(DesktopOnly)' == 'true'">net10.0</TargetFrameworks>
+    <RootNamespace>AgIsoStack</RootNamespace>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <PackageId>AgIsoStack.VirtualTerminal</PackageId>
+    <Version>0.1.0</Version>
+    <Description>An ISOBUS virtual terminal for .NET: AgIsoStack++'s VT server driven on one thread, the active screen as a draw list.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Native>$(MSBuildThisFileDirectory)../../native/</Native>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <DefineConstants>$(DefineConstants);__IOS__</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!-- The package: each native library that is built, under runtimes/ (the multi-target pack sees
+       only items outside the per-framework conditions). iOS: the iOS SDK packs native libraries
+       only into binding projects, so the static library goes under runtimes/ and buildTransitive/
+       adds it to the app; an app referencing this project links native/build-ios/libisoshim-all.a
+       itself. Android: in the .aar, below. -->
+  <ItemGroup>
+    <None Include="$(Native)build-mac/libisoshim.dylib" Condition="Exists('$(Native)build-mac/libisoshim.dylib')" Pack="true" PackagePath="runtimes/osx/native/" Visible="false" />
+    <None Include="$(Native)build-linux/libisoshim.so" Condition="Exists('$(Native)build-linux/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-x64/native/" Visible="false" />
+    <None Include="$(Native)build-windows/isoshim.dll" Condition="Exists('$(Native)build-windows/isoshim.dll')" Pack="true" PackagePath="runtimes/win-x64/native/" Visible="false" />
+    <None Include="$(Native)build-ios/libisoshim-all.a" Condition="Exists('$(Native)build-ios/libisoshim-all.a')" Pack="true" PackagePath="runtimes/ios-arm64/native/" Visible="false" />
+    <None Include="AgIsoStack.VirtualTerminal.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+  <!-- A desktop app referencing this project: this machine's library next to it. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <None Update="$(Native)build-mac/libisoshim.dylib" CopyToOutputDirectory="PreserveNewest" Link="libisoshim.dylib" />
+    <None Update="$(Native)build-linux/libisoshim.so" CopyToOutputDirectory="PreserveNewest" Link="libisoshim.so" />
+    <None Update="$(Native)build-windows/isoshim.dll" CopyToOutputDirectory="PreserveNewest" Link="isoshim.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <AndroidNativeLibrary Include="$(Native)build-android-arm64-v8a/libisoshim.so" Abi="arm64-v8a" Condition="Exists('$(Native)build-android-arm64-v8a/libisoshim.so')" />
+    <AndroidNativeLibrary Include="$(Native)build-android-armeabi-v7a/libisoshim.so" Abi="armeabi-v7a" Condition="Exists('$(Native)build-android-armeabi-v7a/libisoshim.so')" />
+    <AndroidNativeLibrary Include="$(Native)build-android-x86_64/libisoshim.so" Abi="x86_64" Condition="Exists('$(Native)build-android-x86_64/libisoshim.so')" />
+  </ItemGroup>
+</Project>

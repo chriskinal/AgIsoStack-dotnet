@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../Local.props" Condition="Exists('../Local.props')" />
+  <PropertyGroup>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <ApplicationId>com.agopenweb.isostack-tests</ApplicationId>
+    <ApplicationTitle>IsoStack spike</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <CodesignKey>Apple Development</CodesignKey>
+    <CodesignProvision>Automatic</CodesignProvision>
+    <!-- The Apple team that signs it: -p:DevTeam=XXXXXXXXXX, or DevTeam in dotnet/Local.props -->
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../IsoShimSpike.cs" />
+    <Compile Include="../IsoShimBench.cs" />
+    <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
+    <NativeReference Include="../../native/build-ios/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
+  </ItemGroup>
+</Project>

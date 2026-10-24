@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationId>com.agopenweb.isostack_tests</ApplicationId>
+    <ApplicationTitle>IsoStack spike</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../IsoShimSpike.cs" />
+    <Compile Include="../IsoShimBench.cs" />
+    <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />
+    <AndroidNativeLibrary Include="../../native/build-android/libisoshim.so" Abi="arm64-v8a" />
+  </ItemGroup>
+</Project>

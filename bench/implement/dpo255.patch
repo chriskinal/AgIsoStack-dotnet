@@ -1,0 +1,10 @@
+--- a/examples/virtual_terminal/version3_object_pool/main.cpp
++++ b/examples/virtual_terminal/version3_object_pool/main.cpp
+@@ -108,6 +108,7 @@
+ 	}
+ 
+ 	isobus::CANStackLogger::set_can_stack_logger_sink(&logger);
++	isobus::CANNetworkManager::CANNetwork.get_configuration().set_number_of_packets_per_dpo_message(255); // bench: 255 frames per batch
+ 	isobus::CANStackLogger::set_log_level(isobus::CANStackLogger::LoggingLevel::Info); // Change this to Debug to see more information
+ 	isobus::CANHardwareInterface::set_number_of_can_channels(1);
+ 	isobus::CANHardwareInterface::assign_can_channel_frame_handler(0, canDriver);

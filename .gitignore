@@ -1,0 +1,9 @@
+native/build-*/
+bin/
+obj/
+bench/out/
+bench/implement/out/
+bench/devices.env
+dotnet/Local.props
+__pycache__/
+.DS_Store

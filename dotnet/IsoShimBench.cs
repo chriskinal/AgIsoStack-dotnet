@@ -1,6 +1,6 @@
 // Bench: the terminal on a real bus, its frames over TCP from bench/can_tcp_relay.py on the CM4.
-// Waits for the example implement (NAME function 16), presses its alarm soft key (5000), and
-// expects the alarm mask (2000) back. Measures the link with a ping every 50 ms, and counts upload attempts
+// Waits for the example implement (NAME function 16), shows it, presses its alarm soft key (5000),
+// and expects the alarm mask (2000) back. Measures the link with a ping every 50 ms, and counts upload attempts
 // (ETP request-to-send aimed at us) and aborts as they cross the link.
 using System;
 using System.Collections.Generic;
@@ -9,29 +9,20 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
+using static IsoShim;
 
 public static unsafe class IsoShimBench
 {
-#if __IOS__
-    const string Lib = "__Internal";
-#else
-    const string Lib = "isoshim";
-#endif
-    [DllImport(Lib)] static extern int isoshim_start_terminal(delegate* unmanaged<int, uint, byte*, int, int, void> send,
-                                                               delegate* unmanaged<int, int, int, void> ev, ushort wanted);
-    [DllImport(Lib)] static extern void isoshim_set_log(delegate* unmanaged<int, byte*, void> fn, int level);
-    [DllImport(Lib)] static extern void isoshim_set_packets_per_cts(byte packets);
-    [DllImport(Lib)] static extern void isoshim_receive(int channel, uint id, byte* data, int len, int extended);
-    [DllImport(Lib)] static extern void isoshim_step();
-    [DllImport(Lib)] static extern int isoshim_press_soft_key(ushort objectId);
-    [DllImport(Lib)] static extern void isoshim_stop();
-
     static Socket? sock;
     static readonly object sendLock = new();
     static readonly Stopwatch clock = new();
     static long framesOut, framesIn;
-    static volatile int serverAddress = -1, poolObjects = -1, poolAddress = -1, poolBad = -1, mask = -1;
+    static volatile int serverAddress = -1, poolBad = -1, mask = -1;
+    static ulong wanted; // the example implement's NAME, once its pool is ready
+    static int screensDrawn;
     static readonly List<string> events = new();
     static readonly List<string> warnings = new();
     static int warningCount;
@@ -63,15 +54,34 @@ public static unsafe class IsoShimBench
     {
         switch (kind)
         {
-            case 1: serverAddress = a; Note($"terminal claimed 0x{a:X2}"); break;
-            case 3: poolObjects = a; poolAddress = b; Note($"implement 0x{b:X2}: pool parsed, {a} objects"); break;
-            case 4: poolBad = a; Note($"pool rejected at object {a}"); break;
-            case 5: mask = a; Note($"active mask {a}"); break;
-            case 6: Note($"other implement 0x{b:X2}: pool parsed, {a} objects (not under test)"); break;
-            case 7: Note($"pool from 0x{b:X2} arrived, parsing"); break;
-            case 8: Note($"implement 0x{b:X2} gone ({(a == 0 ? "maintenance timeout" : "re-initiated")})"); break;
+            case ServerAddress: serverAddress = a; Note($"terminal claimed 0x{a:X2}"); break;
+            case PoolOk: Note($"implement 0x{b:X2}: pool parsed, {a} objects"); break;
+            case PoolBad: Note($"implement 0x{b:X2}: pool rejected at object {a}"); break;
+            case Mask: mask = a; Note($"active mask {a} (implement 0x{b:X2})"); break;
+            case Active: Note($"implement 0x{a:X2} shown"); break;
+            case ParseStart: Note($"pool from 0x{b:X2} arrived, parsing"); break;
+            case WsShutdown: Note($"implement 0x{b:X2} gone ({(a == 0 ? "maintenance timeout" : "re-initiated")})"); break;
         }
     }
+
+    // The working set list: the example implement is the one whose NAME has function code 16.
+    [UnmanagedCallersOnly]
+    static void OnMessage(byte* json, int len)
+    {
+        using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(new ReadOnlySpan<byte>(json, len).ToArray()));
+        var root = doc.RootElement;
+        string type = root.GetProperty("type").GetString()!;
+        if (type == "screen") { screensDrawn++; return; }
+        if (type != "workingSets" || wanted != 0) return;
+        foreach (var ws in root.GetProperty("list").EnumerateArray())
+        {
+            ulong name = Convert.ToUInt64(ws.GetProperty("name").GetString(), 16);
+            if (((name >> 40) & 0xFF) == 16 && ws.GetProperty("state").GetString() == "ready") wanted = name;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    static void OnImage(uint id, int w, int h, byte* rgba) { }
 
     [UnmanagedCallersOnly]
     static void OnLog(int level, byte* text)
@@ -174,6 +184,9 @@ public static unsafe class IsoShimBench
         log($"bench to {host}:{port} on {RuntimeInformation.OSDescription}, .NET {Environment.Version}, " +
             $"dynamic code {(RuntimeFeature.IsDynamicCodeSupported ? "yes" : "no (AOT)")}");
         clock.Restart();
+        wanted = 0;
+        screensDrawn = 0;
+        serverAddress = poolBad = mask = -1;
         sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try { sock.Connect(host, port); }
         catch (SocketException e) { log($"FAIL connect: {e.Message}"); return false; }
@@ -184,18 +197,28 @@ public static unsafe class IsoShimBench
         new Thread(() => Pinger(stop.Token)) { IsBackground = true, Name = "ping" }.Start();
 
         isoshim_set_log(&OnLog, 2);
-        isoshim_set_packets_per_cts(255);
-        int rc = isoshim_start_terminal(&OnSend, &OnEvent, 16); // the example implement: steering control
+        var config = new Config { PacketsPerCts = 255 };
+        var callbacks = new Host { Send = &OnSend, Event = &OnEvent, Message = &OnMessage, Image = &OnImage };
+        int rc = isoshim_vt_start(&config, &callbacks);
         if (rc != 0) { log($"FAIL start {rc}"); return false; }
 
-        bool pressed = false, pass = false;
+        bool shown = false, pressed = false, pass = false;
         double tPool = -1, tDone = -1;
         while (clock.Elapsed.TotalSeconds < timeoutS)
         {
             isoshim_step();
             if (poolBad >= 0) break;
-            if (tPool < 0 && poolObjects >= 0) tPool = clock.Elapsed.TotalMilliseconds;
-            if (tPool >= 0 && !pressed && mask == 1000) { pressed = isoshim_press_soft_key(5000) == 1; Note($"pressed soft key 5000: {(pressed ? "sent" : "not sent")}"); }
+            if (!shown && wanted != 0)
+            {
+                tPool = clock.Elapsed.TotalMilliseconds;
+                shown = isoshim_activate(wanted) == 1;
+                Note($"example implement {wanted:X16} ready; shown: {(shown ? "yes" : "no")}");
+            }
+            if (shown && !pressed && mask == 1000)
+            {
+                pressed = isoshim_soft_key(5000, Pressed) == 1 && isoshim_soft_key(5000, Released) == 1;
+                Note($"pressed soft key 5000: {(pressed ? "sent" : "not sent")}");
+            }
             if (pressed && mask == 2000) { tDone = clock.Elapsed.TotalMilliseconds; pass = true; break; }
             Thread.Sleep(2);
         }
@@ -212,6 +235,7 @@ public static unsafe class IsoShimBench
         if (firstRtsMs >= 0 && tPool >= 0) log($"upload: first request-to-send to pool parsed {tPool - firstRtsMs:F0} ms");
         lock (rtsBySource) log($"upload attempts: {string.Join(", ", rtsBySource.Select(kv => $"0x{kv.Key:X2} x{kv.Value}"))}; ETP aborts {aborts}");
         log($"ping rtt ms ({s.Count}): p50 {Pct(s, .5):F1}  p90 {Pct(s, .9):F1}  p99 {Pct(s, .99):F1}  max {(s.Count > 0 ? s[^1] : double.NaN):F1}");
+        log($"screens drawn: {screensDrawn}");
         log($"longest gap between arrivals: {maxGapMs:F0} ms, at {maxGapAtMs:F0} ms");
         lock (warnings) { log($"stack warnings and errors: {warningCount}"); foreach (var w in warnings) log("  " + w); }
         log(pass ? $"PASS in {tDone:F0} ms" : "FAIL");

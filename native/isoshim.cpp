@@ -2,6 +2,7 @@
 // stack's hardware hooks (can_hardware_abstraction.hpp) itself, so HardwareIntegration and its
 // threads stay out.
 #include "isoshim.h"
+#include "render.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -24,8 +25,8 @@
 
 namespace {
 
-isoshim_send_fn g_send = nullptr;
-isoshim_event_fn g_event = nullptr;
+isoshim_host g_host{};
+isoshim_vt_config g_config{};
 isoshim_log_fn g_logFn = nullptr;
 int g_channels = 0;
 
@@ -35,17 +36,22 @@ std::deque<isobus::CANMessageFrame> g_rx;
 // Frames out: the stack sends from the step thread only, and they leave at the end of the step.
 std::vector<isobus::CANMessageFrame> g_tx;
 
+// What a load or list callback hands back through isoshim_reply.
+std::vector<std::vector<std::uint8_t>> g_replies;
+
 void flushTransmit() {
 	while (!g_tx.empty()) {
 		std::vector<isobus::CANMessageFrame> batch;
 		batch.swap(g_tx);
 		for (const auto &frame : batch) {
-			if (g_send) g_send(frame.channel, frame.identifier, frame.data, frame.dataLength, frame.isExtendedFrame ? 1 : 0);
+			g_host.send(frame.channel, frame.identifier, frame.data, frame.dataLength, frame.isExtendedFrame ? 1 : 0);
 			// The stack learns of its own frames on the bus this way (address claim, busload).
 			isobus::on_transmit_can_message_frame_from_hardware(frame);
 		}
 	}
 }
+
+void message(const std::string &json) { g_host.message(json.c_str(), static_cast<int32_t>(json.size())); }
 
 class Logger : public isobus::CANStackLogger {
 public:
@@ -59,18 +65,38 @@ public:
 Logger g_logger;
 
 using WorkingSet = isobus::VirtualTerminalServerManagedWorkingSet;
+using State = WorkingSet::ObjectPoolProcessingThreadState;
 
 std::int32_t addressOf(const std::shared_ptr<WorkingSet> &ws) {
 	const auto cf = ws ? ws->get_control_function() : nullptr;
 	return cf ? cf->get_address() : -1;
 }
 
-// A minimal terminal: nothing stored, any object. The implement under test (by NAME function code)
-// is made the active working set when its pool is parsed.
+std::uint64_t nameOf(const std::shared_ptr<WorkingSet> &ws) {
+	const auto cf = ws ? ws->get_control_function() : nullptr;
+	return cf ? cf->get_NAME().get_full_name() : 0;
+}
+
+std::shared_ptr<isobus::WorkingSet> workingSetObject(const std::shared_ptr<WorkingSet> &ws) {
+	if (!ws || ws->get_object_pool_processing_state() != State::Joined) return nullptr;
+	const auto object = ws->get_working_set_object();
+	if (!object || object->get_object_type() != isobus::VirtualTerminalObjectType::WorkingSet) return nullptr;
+	return std::static_pointer_cast<isobus::WorkingSet>(object);
+}
+
+// The terminal: the server's questions answered from the config and the host's storage, and its
+// state reported to the host.
 class Terminal : public isobus::VirtualTerminalServer {
 public:
-	Terminal(std::shared_ptr<isobus::InternalControlFunction> cf, std::uint16_t wanted)
-	    : VirtualTerminalServer(std::move(cf)), wanted_(wanted) {}
+	explicit Terminal(std::shared_ptr<isobus::InternalControlFunction> cf) : VirtualTerminalServer(std::move(cf)) {
+		repaintHandle_ = get_on_repaint_event_dispatcher().add_listener([this](std::shared_ptr<WorkingSet> ws) {
+			if (ws == activeWorkingSet) dirty_ = true;
+		});
+		maskHandle_ = get_on_change_active_mask_event_dispatcher().add_listener(
+		  [this](std::shared_ptr<WorkingSet>, std::uint16_t, std::uint16_t) { dirty_ = true; });
+		keyMaskHandle_ = get_on_change_active_softkey_mask_event_dispatcher().add_listener(
+		  [this](std::shared_ptr<WorkingSet>, std::uint16_t, std::uint16_t) { dirty_ = true; });
+	}
 
 	// A pool can still be parsing on its own thread; the working set that owns the thread must not
 	// be destroyed (by the base class, after this) until it has finished. Upstream's working set
@@ -80,60 +106,83 @@ public:
 	}
 
 	bool get_is_enough_memory(std::uint32_t) const override { return true; }
-	VTVersion get_version() const override { return VTVersion::Version5; }
-	std::uint8_t get_number_of_navigation_soft_keys() const override { return 0; }
-	std::uint8_t get_soft_key_descriptor_x_pixel_width() const override { return 80; }
-	std::uint8_t get_soft_key_descriptor_y_pixel_height() const override { return 80; }
-	std::uint8_t get_number_of_possible_virtual_soft_keys_in_soft_key_mask() const override { return 64; }
-	std::uint8_t get_number_of_physical_soft_keys() const override { return 6; }
-	std::uint16_t get_data_mask_area_size_x_pixels() const override { return 480; }
-	std::uint16_t get_data_mask_area_size_y_pixels() const override { return 480; }
+	VTVersion get_version() const override {
+		switch (g_config.version) {
+			case 3: return VTVersion::Version3;
+			case 4: return VTVersion::Version4;
+			case 6: return VTVersion::Version6;
+			default: return VTVersion::Version5;
+		}
+	}
+	std::uint8_t get_number_of_navigation_soft_keys() const override { return g_config.navigation_keys; }
+	std::uint8_t get_soft_key_descriptor_x_pixel_width() const override { return g_config.key_width; }
+	std::uint8_t get_soft_key_descriptor_y_pixel_height() const override { return g_config.key_height; }
+	std::uint8_t get_number_of_possible_virtual_soft_keys_in_soft_key_mask() const override { return g_config.virtual_keys; }
+	std::uint8_t get_number_of_physical_soft_keys() const override { return g_config.physical_keys; }
+	std::uint16_t get_data_mask_area_size_x_pixels() const override { return g_config.mask_width; }
+	std::uint16_t get_data_mask_area_size_y_pixels() const override { return g_config.mask_height; }
+	std::uint8_t get_supported_small_fonts_bitfield() const override { return g_config.small_fonts; }
+	std::uint8_t get_supported_large_fonts_bitfield() const override { return g_config.large_fonts; }
 	void suspend_working_set(std::shared_ptr<WorkingSet>) override {}
 	SupportedWideCharsErrorCode get_supported_wide_chars(std::uint8_t, std::uint16_t, std::uint16_t, std::uint8_t &ranges,
 	                                                     std::vector<std::uint8_t> &) override {
 		ranges = 0;
 		return SupportedWideCharsErrorCode::AnyOtherError;
 	}
-	std::vector<std::array<std::uint8_t, 7>> get_versions(isobus::NAME) override { return {}; }
 	std::vector<std::uint8_t> get_supported_objects() const override {
 		std::vector<std::uint8_t> all;
-		for (int i = 0; i <= 47; ++i) all.push_back(static_cast<std::uint8_t>(i));
+		for (int i = 0; i <= 48; ++i) all.push_back(static_cast<std::uint8_t>(i));
 		return all;
 	}
-	std::vector<std::uint8_t> load_version(const std::vector<std::uint8_t> &, isobus::NAME) override { return {}; }
-	bool save_version(const std::vector<std::uint8_t> &, const std::vector<std::uint8_t> &, isobus::NAME) override { return true; }
-	bool delete_version(const std::vector<std::uint8_t> &, isobus::NAME) override { return true; }
-	std::vector<std::array<std::uint8_t, 32>> get_extended_versions(isobus::NAME) override { return {}; }
-	bool delete_all_versions(std::uint8_t, isobus::NAME) override { return true; }
-	bool delete_object_pool(isobus::NAME) override { return true; }
+
+	std::vector<std::array<std::uint8_t, 7>> get_versions(isobus::NAME name) override { return labels<7>(name); }
+	std::vector<std::array<std::uint8_t, 32>> get_extended_versions(isobus::NAME name) override {
+		return get_version() == VTVersion::Version6 || get_version() == VTVersion::Version5 ? labels<32>(name)
+		                                                                                     : std::vector<std::array<std::uint8_t, 32>>{};
+	}
+	std::vector<std::uint8_t> load_version(const std::vector<std::uint8_t> &label, isobus::NAME name) override {
+		if (!g_host.load) return {};
+		g_replies.clear();
+		const bool found = g_host.load(name.get_full_name(), label.data(), static_cast<int32_t>(label.size())) != 0;
+		std::vector<std::uint8_t> pool;
+		if (found)
+			for (const auto &part : g_replies) pool.insert(pool.end(), part.begin(), part.end());
+		g_replies.clear();
+		return pool;
+	}
+	// Upstream calls this once per part of the pool as it arrived, in order, for one Store Version;
+	// the first part is the working set's first raw data buffer.
+	bool save_version(const std::vector<std::uint8_t> &pool, const std::vector<std::uint8_t> &label, isobus::NAME name) override {
+		if (!g_host.save) return false;
+		bool first = true;
+		for (const auto &ws : managedWorkingSetList)
+			if (nameOf(ws) == name.get_full_name() && ws->get_number_iop_files() > 0) first = &ws->get_iop_raw_data(0) == &pool;
+		return g_host.save(name.get_full_name(), label.data(), static_cast<int32_t>(label.size()), pool.data(),
+		                   static_cast<int32_t>(pool.size()), first ? 0 : 1) != 0;
+	}
+	bool delete_version(const std::vector<std::uint8_t> &label, isobus::NAME name) override {
+		return g_host.remove && g_host.remove(name.get_full_name(), label.data(), static_cast<int32_t>(label.size())) != 0;
+	}
+	bool delete_all_versions(std::uint8_t labelLen, isobus::NAME name) override {
+		return g_host.remove && g_host.remove(name.get_full_name(), nullptr, labelLen) != 0;
+	}
+	bool delete_object_pool(isobus::NAME) override {
+		listChanged_ = true;
+		return true;
+	}
 
 	void object_pool_parse_finished(std::shared_ptr<WorkingSet> ws, bool success) override {
-		const auto cf = ws->get_control_function();
-		const bool wanted = wanted_ == 0xFFFF || (cf && cf->get_NAME().get_function_code() == wanted_);
-		if (!success) {
-			g_event(wanted ? ISOSHIM_POOL_BAD : ISOSHIM_OTHER_POOL, ws->get_object_pool_faulting_object_id(), addressOf(ws));
-			return;
-		}
-		const auto object = std::static_pointer_cast<isobus::WorkingSet>(ws->get_working_set_object());
-		if (!wanted || !object || (underTest_ && underTest_ != ws)) {
-			g_event(ISOSHIM_OTHER_POOL, static_cast<int32_t>(ws->get_object_tree().size()), addressOf(ws));
-			return;
-		}
-		underTest_ = ws;
-		mask_ = 0xFFFF;
-		activeWorkingSet = ws;
-		activeWorkingSetMasterAddress = cf->get_address();
-		activeWorkingSetDataMaskObjectID = object->get_active_mask();
-		if (send_status_message()) statusMessageTimestamp_ms = isobus::SystemTiming::get_timestamp_ms();
-		g_event(ISOSHIM_POOL_OK, static_cast<int32_t>(ws->get_object_tree().size()), addressOf(ws));
+		listChanged_ = true;
+		if (success)
+			g_host.event(ISOSHIM_POOL_OK, static_cast<int32_t>(ws->get_object_tree().size()), addressOf(ws));
+		else
+			g_host.event(ISOSHIM_POOL_BAD, ws->get_object_pool_faulting_object_id(), addressOf(ws));
 	}
 
 	void handle_unexpected_working_set_shutdown(std::shared_ptr<WorkingSet> ws, UnexpectedShutdownReason reason) override {
-		g_event(ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
-		if (ws == underTest_) {
-			underTest_.reset();
-			mask_ = 0xFFFF;
-		}
+		listChanged_ = true;
+		renderer_.forget(ws.get());
+		g_host.event(ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
 	}
 
 	void step() {
@@ -141,31 +190,184 @@ public:
 		// transferred_object_pool_parse_start hook is never called, AgIsoStack++ #802, so it is
 		// looked for here).
 		for (const auto &ws : managedWorkingSetList) {
-			const bool running = ws->get_object_pool_processing_state() == WorkingSet::ObjectPoolProcessingThreadState::Running;
-			if (running && parsing_.insert(ws.get()).second) g_event(ISOSHIM_PARSE_START, 0, addressOf(ws));
+			const bool running = ws->get_object_pool_processing_state() == State::Running;
+			if (running && parsing_.insert(ws.get()).second) {
+				listChanged_ = true;
+				g_host.event(ISOSHIM_PARSE_START, 0, addressOf(ws));
+			}
 			if (!running) parsing_.erase(ws.get());
 		}
 		update();
-		if (!underTest_) return;
-		const auto object = std::static_pointer_cast<isobus::WorkingSet>(underTest_->get_working_set_object());
-		if (object && object->get_active_mask() != mask_) {
-			mask_ = object->get_active_mask();
-			g_event(ISOSHIM_MASK, mask_, 0);
+		followActive();
+		reportWorkingSets();
+		if (dirty_) {
+			dirty_ = false;
+			drawScreen();
 		}
 	}
 
-	bool press(std::uint16_t id) {
-		if (!underTest_) return false;
-		const auto client = underTest_->get_control_function();
-		return send_soft_key_activation_message(KeyActivationCode::ButtonPressedOrLatched, id, mask_, 1, client) &&
-		       send_soft_key_activation_message(KeyActivationCode::ButtonUnlatchedOrReleased, id, mask_, 1, client);
+	bool activate(std::uint64_t name) {
+		for (const auto &ws : managedWorkingSetList) {
+			if (nameOf(ws) != name || !workingSetObject(ws)) continue;
+			if (ws == activeWorkingSet) return true;
+			if (activeWorkingSet) runMacros(activeWorkingSet, workingSetObject(activeWorkingSet), isobus::EventID::OnDeactivate);
+			activeWorkingSet = ws;
+			activeWorkingSetMasterAddress = static_cast<std::uint8_t>(addressOf(ws));
+			activeWorkingSetDataMaskObjectID = workingSetObject(ws)->get_active_mask();
+			runMacros(ws, workingSetObject(ws), isobus::EventID::OnActivate);
+			followActive();
+			return true;
+		}
+		return false;
+	}
+
+	// Soft keys and buttons: the activation message to the implement and the key's macros.
+	bool key(std::uint16_t id, std::int32_t state, bool button) {
+		const auto ws = activeWorkingSet;
+		const auto object = workingSetObject(ws) ? find(ws, id) : nullptr;
+		if (!object) return false;
+		std::uint8_t code = 0;
+		if (button) {
+			if (object->get_object_type() != isobus::VirtualTerminalObjectType::Button) return false;
+			code = std::static_pointer_cast<isobus::Button>(object)->get_key_code();
+		} else {
+			if (object->get_object_type() != isobus::VirtualTerminalObjectType::Key) return false;
+			code = std::static_pointer_cast<isobus::Key>(object)->get_key_code();
+		}
+		const auto activation = static_cast<KeyActivationCode>(state);
+		const auto client = ws->get_control_function();
+		const bool sent = button ? send_button_activation_message(activation, id, activeWorkingSetDataMaskObjectID, code, client)
+		                         : send_soft_key_activation_message(activation, id, activeWorkingSetDataMaskObjectID, code, client);
+		if (state == ISOSHIM_PRESSED) runMacros(ws, object, isobus::EventID::OnKeyPress);
+		if (state == ISOSHIM_RELEASED) runMacros(ws, object, isobus::EventID::OnKeyRelease);
+		return sent;
 	}
 
 private:
-	std::uint16_t wanted_;
-	std::shared_ptr<WorkingSet> underTest_;
-	std::uint16_t mask_ = 0xFFFF;
+	template<std::size_t N>
+	std::vector<std::array<std::uint8_t, N>> labels(isobus::NAME name) {
+		std::vector<std::array<std::uint8_t, N>> out;
+		if (!g_host.list) return out;
+		g_replies.clear();
+		g_host.list(name.get_full_name(), static_cast<int32_t>(N));
+		for (const auto &reply : g_replies) {
+			if (reply.size() != N) continue;
+			std::array<std::uint8_t, N> label;
+			std::copy(reply.begin(), reply.end(), label.begin());
+			out.push_back(label);
+		}
+		g_replies.clear();
+		return out;
+	}
+
+	// get_object_by_id would add an empty entry for a missing id (upstream's operator[]).
+	static std::shared_ptr<isobus::VTObject> find(const std::shared_ptr<WorkingSet> &ws, std::uint16_t id) {
+		const auto &tree = ws->get_object_tree();
+		const auto it = tree.find(id);
+		return it == tree.end() ? nullptr : it->second;
+	}
+
+	void runMacros(const std::shared_ptr<WorkingSet> &ws, const std::shared_ptr<isobus::VTObject> &object, isobus::EventID event) {
+		if (ws && object) process_macro(object, event, object->get_object_type(), ws);
+	}
+
+	// The status message reports the active implement's masks: keep them in step with its pool.
+	void followActive() {
+		const auto object = workingSetObject(activeWorkingSet);
+		std::uint16_t mask = isobus::NULL_OBJECT_ID, keys = isobus::NULL_OBJECT_ID;
+		if (object) {
+			mask = object->get_active_mask();
+			const auto maskObject = find(activeWorkingSet, mask);
+			if (maskObject && maskObject->get_object_type() == isobus::VirtualTerminalObjectType::DataMask)
+				keys = std::static_pointer_cast<isobus::DataMask>(maskObject)->get_soft_key_mask();
+			else if (maskObject && maskObject->get_object_type() == isobus::VirtualTerminalObjectType::AlarmMask)
+				keys = std::static_pointer_cast<isobus::AlarmMask>(maskObject)->get_soft_key_mask();
+		}
+		const std::int32_t address = object ? addressOf(activeWorkingSet) : -1;
+		const bool changed = address != shownAddress_ || mask != shownMask_ || keys != shownKeys_;
+		if (address != shownAddress_) {
+			listChanged_ = true;
+			g_host.event(ISOSHIM_ACTIVE, address, 0);
+		}
+		if (address != shownAddress_ || mask != shownMask_) g_host.event(ISOSHIM_MASK, mask, address);
+		shownAddress_ = address;
+		shownMask_ = mask;
+		shownKeys_ = keys;
+		if (!changed) return;
+		dirty_ = true;
+		if (object) {
+			activeWorkingSetDataMaskObjectID = mask;
+			activeWorkingSetSoftkeyMaskObjectID = keys;
+		}
+		if (send_status_message()) statusMessageTimestamp_ms = isobus::SystemTiming::get_timestamp_ms();
+	}
+
+	void reportWorkingSets() {
+		// A transfer's progress counts as a change in whole percent.
+		for (const auto &ws : managedWorkingSetList) {
+			const int percent = static_cast<int>(ws->iop_load_percentage());
+			auto &last = progress_[ws.get()];
+			if (percent != last) {
+				last = percent;
+				listChanged_ = true;
+			}
+		}
+		if (listChanged_ || managedWorkingSetList.size() != reportedCount_) {
+			listChanged_ = false;
+			reportedCount_ = managedWorkingSetList.size();
+			isoshim::Json json;
+			json.begin_object().key("type").value("workingSets");
+			json.key("active");
+			if (workingSetObject(activeWorkingSet))
+				json.value(isoshim::hexName(nameOf(activeWorkingSet)));
+			else
+				json.null();
+			json.key("list").begin_array();
+			for (const auto &ws : managedWorkingSetList) {
+				json.begin_object().key("name").value(isoshim::hexName(nameOf(ws))).key("address").value(addressOf(ws));
+				const auto state = ws->get_object_pool_processing_state();
+				const char *text = "waiting";
+				if (state == State::Running || state == State::Success)
+					text = "parsing";
+				else if (state == State::Fail)
+					text = "failed";
+				else if (state == State::Joined)
+					text = workingSetObject(ws) ? "ready" : "failed";
+				else if (ws->is_object_pool_transfer_in_progress())
+					text = "transferring";
+				json.key("state").value(text).key("progress").value(static_cast<int>(ws->iop_load_percentage()));
+				if (state == State::Joined) json.key("objects").value(static_cast<int>(ws->get_object_tree().size()));
+				if (const auto object = workingSetObject(ws)) json.key("selectable").value(object->get_selectable());
+				json.end_object();
+			}
+			json.end_array().end_object();
+			message(json.str());
+		}
+	}
+
+	void drawScreen() {
+		std::string screen;
+		if (workingSetObject(activeWorkingSet)) {
+			screen = renderer_.screen(*activeWorkingSet, nameOf(activeWorkingSet), g_config.mask_width, g_config.mask_height,
+			                          g_config.key_width, g_config.key_height, g_host.image);
+		} else {
+			screen = "{\"type\":\"screen\",\"ws\":null}";
+		}
+		if (screen == lastScreen_) return;
+		lastScreen_ = screen;
+		message(screen);
+	}
+
 	std::set<const WorkingSet *> parsing_;
+	std::map<const WorkingSet *, int> progress_;
+	std::size_t reportedCount_ = 0;
+	bool listChanged_ = true;
+	bool dirty_ = true;
+	std::int32_t shownAddress_ = -2;
+	std::uint16_t shownMask_ = isobus::NULL_OBJECT_ID, shownKeys_ = isobus::NULL_OBJECT_ID;
+	std::string lastScreen_;
+	isoshim::Renderer renderer_;
+	isobus::EventCallbackHandle repaintHandle_, maskHandle_, keyMaskHandle_;
 };
 
 std::shared_ptr<isobus::InternalControlFunction> g_serverCf, g_clientCf;
@@ -175,21 +377,20 @@ std::shared_ptr<isobus::PartneredControlFunction> g_partner;
 std::vector<std::uint8_t> g_pool;
 bool g_serverReported = false, g_clientReported = false;
 
-isobus::NAME makeName(isobus::NAME::Function function, std::uint32_t identity) {
+isobus::NAME makeName(isobus::NAME::Function function, std::uint32_t identity, std::uint16_t manufacturer, std::uint8_t instance) {
 	isobus::NAME name(0);
 	name.set_arbitrary_address_capable(true);
 	name.set_industry_group(2);
 	name.set_function_code(static_cast<std::uint8_t>(function));
+	name.set_function_instance(instance);
 	name.set_identity_number(identity);
-	name.set_manufacturer_code(1407);
+	name.set_manufacturer_code(manufacturer);
 	return name;
 }
 
-void startTerminal(std::uint16_t wanted) {
-	g_serverCf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
-	  makeName(isobus::NAME::Function::VirtualTerminal, 3), 0, 0x26);
-	g_terminal.reset(new Terminal(g_serverCf, wanted));
-	g_terminal->initialize();
+template<typename T>
+void orDefault(T &field, T value) {
+	if (field == 0) field = value;
 }
 
 } // namespace
@@ -205,22 +406,49 @@ bool send_can_message_frame_to_hardware(const CANMessageFrame &frame) {
 
 extern "C" {
 
-int32_t isoshim_version(void) { return 2; }
+int32_t isoshim_version(void) { return 3; }
 
-int32_t isoshim_start(isoshim_send_fn send, isoshim_event_fn event, const uint8_t *pool, int32_t poolLen) {
-	if (!send || !event || !pool || poolLen <= 0 || g_terminal) return -1;
-	g_send = send;
-	g_event = event;
-	g_pool.assign(pool, pool + poolLen);
+int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host) {
+	if (!config || !host || !host->send || !host->event || !host->message) return -1;
+	if (g_terminal) return -2;
+	g_host = *host;
+	g_config = *config;
+	orDefault<std::uint32_t>(g_config.identity, 3);
+	orDefault<std::uint16_t>(g_config.manufacturer, 1407);
+	orDefault<std::uint16_t>(g_config.mask_width, 480);
+	orDefault<std::uint16_t>(g_config.mask_height, 480);
+	orDefault<std::uint8_t>(g_config.preferred_address, 0x26);
+	orDefault<std::uint8_t>(g_config.key_width, 80);
+	orDefault<std::uint8_t>(g_config.key_height, 80);
+	orDefault<std::uint8_t>(g_config.physical_keys, 6);
+	orDefault<std::uint8_t>(g_config.virtual_keys, 64);
+	orDefault<std::uint8_t>(g_config.version, 5);
+	orDefault<std::uint8_t>(g_config.small_fonts, 0xFF);
+	orDefault<std::uint8_t>(g_config.large_fonts, 0xFF);
+	orDefault<std::uint8_t>(g_config.packets_per_cts, 255);
+
+	auto &network = isobus::CANNetworkManager::CANNetwork.get_configuration();
+	network.set_number_of_packets_per_cts_message(g_config.packets_per_cts);
+	network.set_number_of_packets_per_dpo_message(g_config.packets_per_cts);
 	if (std::getenv("ISOSHIM_LOG")) {
 		isobus::CANStackLogger::set_can_stack_logger_sink(&g_logger);
 		isobus::CANStackLogger::set_log_level(isobus::CANStackLogger::LoggingLevel::Info);
 	}
-	g_channels = 2;
-	startTerminal(0xFFFF);
+	g_channels = 1;
+	g_serverCf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
+	  makeName(isobus::NAME::Function::VirtualTerminal, g_config.identity, g_config.manufacturer, g_config.function_instance), 0,
+	  g_config.preferred_address);
+	g_terminal.reset(new Terminal(g_serverCf));
+	g_terminal->initialize();
+	return 0;
+}
 
+int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen) {
+	if (!g_terminal || g_client || !pool || poolLen <= 0) return -1;
+	g_pool.assign(pool, pool + poolLen);
+	g_channels = 2;
 	g_clientCf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
-	  makeName(isobus::NAME::Function::SteeringControl, 2), 1);
+	  makeName(isobus::NAME::Function::SteeringControl, 2, 1407, 0), 1);
 	const isobus::NAMEFilter vt(isobus::NAME::NAMEParameters::FunctionCode,
 	                            static_cast<std::uint8_t>(isobus::NAME::Function::VirtualTerminal));
 	g_partner = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(1, { vt });
@@ -233,15 +461,6 @@ int32_t isoshim_start(isoshim_send_fn send, isoshim_event_fn event, const uint8_
 			g_client->send_change_active_mask(0, 2000);
 	});
 	g_client->initialize(false); // updated from isoshim_step, not its own thread
-	return 0;
-}
-
-int32_t isoshim_start_terminal(isoshim_send_fn send, isoshim_event_fn event, uint16_t wantedFunction) {
-	if (!send || !event || g_terminal) return -1;
-	g_send = send;
-	g_event = event;
-	g_channels = 1;
-	startTerminal(wantedFunction);
 	return 0;
 }
 
@@ -281,18 +500,37 @@ void isoshim_step(void) {
 
 	if (!g_serverReported && g_serverCf->get_address_valid()) {
 		g_serverReported = true;
-		g_event(ISOSHIM_SERVER_ADDRESS, g_serverCf->get_address(), 0);
+		g_host.event(ISOSHIM_SERVER_ADDRESS, g_serverCf->get_address(), 0);
 	}
 	if (!g_clientReported && g_clientCf && g_clientCf->get_address_valid()) {
 		g_clientReported = true;
-		g_event(ISOSHIM_CLIENT_ADDRESS, g_clientCf->get_address(), 0);
+		g_host.event(ISOSHIM_CLIENT_ADDRESS, g_clientCf->get_address(), 0);
 	}
 }
 
-int32_t isoshim_press_soft_key(uint16_t objectId) {
-	const bool sent = g_terminal && g_terminal->press(objectId);
+void isoshim_reply(const uint8_t *data, int32_t len) {
+	if (data && len > 0) g_replies.emplace_back(data, data + len);
+}
+
+int32_t isoshim_soft_key(uint16_t objectId, int32_t state) {
+	if (!g_terminal || state < 0 || state > 3) return 0;
+	const bool sent = g_terminal->key(objectId, state, false);
 	flushTransmit();
 	return sent ? 1 : 0;
+}
+
+int32_t isoshim_button(uint16_t objectId, int32_t state) {
+	if (!g_terminal || state < 0 || state > 3) return 0;
+	const bool sent = g_terminal->key(objectId, state, true);
+	flushTransmit();
+	return sent ? 1 : 0;
+}
+
+int32_t isoshim_activate(uint64_t name) {
+	if (!g_terminal) return 0;
+	const bool done = g_terminal->activate(name);
+	flushTransmit();
+	return done ? 1 : 0;
 }
 
 // Everything goes while the network manager is still alive: left to the end of the process, these
@@ -314,14 +552,7 @@ void isoshim_stop(void) {
 	}
 	g_serverReported = g_clientReported = false;
 	g_channels = 0;
-	g_send = nullptr;
-	g_event = nullptr;
-}
-
-void isoshim_set_packets_per_cts(uint8_t packets) {
-	auto &config = isobus::CANNetworkManager::CANNetwork.get_configuration();
-	config.set_number_of_packets_per_cts_message(packets);
-	config.set_number_of_packets_per_dpo_message(packets);
+	g_host = {};
 }
 
 } // extern "C"

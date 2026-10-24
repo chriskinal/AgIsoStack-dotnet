@@ -5,9 +5,11 @@ interface over the stack (`native/`), called from C# by P/Invoke (`dotnet/`), on
 Android, Linux and Windows. The caller carries the CAN frames, so the bus can be anything: a
 SocketCAN interface, a USB adapter, or a CAN-to-network gateway over TCP or Wi-Fi.
 
-**Status:** a working spike, not yet a library. Today the C interface runs a virtual terminal
-server (and, for the self-test, an implement beside it) with a fixed test surface: start, frames
-in, step, frames out, a soft key press, events for address claims, pools and masks. It is built
+**Status:** a working spike becoming a library ([docs/API.md](docs/API.md)). The C interface runs
+a virtual terminal server with a configuration, storage of pool versions through callbacks, the
+working sets as JSON, the active screen as a draw list that a page paints
+([painter/vtpaint.js](painter/vtpaint.js)), soft keys and buttons, and (for the self-test) an
+implement beside it. It is built
 against upstream HEAD and has passed on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro
 (iPadOS 17.7, full AOT), in process and against a real implement over Wi-Fi with delay, loss and
 link cuts ([docs/RESULTS.md](docs/RESULTS.md)). What comes next is in [docs/PLAN.md](docs/PLAN.md):
@@ -58,13 +60,15 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 ## Test
 
 **Self-test** (no bus): `IsoShimSpike.RunAll` puts a terminal and an implement in one process,
-C# carrying every frame between them. Four runs: an upload of upstream's VT3 example pool
-(150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip; a stop
-the moment the pool starts parsing; and a full run after it. It checks that every callback came
-on the stepping thread.
+C# carrying every frame between them. Five runs: an upload of upstream's VT3 example pool
+(150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
+storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
+the implement loads the stored pool instead of uploading. It checks that both masks were drawn
+and that every callback came on the stepping thread.
 
 ```sh
 cd dotnet/console && dotnet run -c Release
+cd dotnet/console && dotnet run -c Release -- screens ../../painter/out   # then open painter/index.html
 bench/selftest.sh            # on the iPad and the Android tablet (bench/devices.env)
 ```
 

@@ -22,6 +22,9 @@ offered to the Open-Agriculture project once it is a library rather than a spike
 - **One thread.** The shim supplies the stack's hardware hooks and runs everything on the
   stepping thread. No stack threads, no hardware layer queues. Adopted 2026-10-24 after the
   stop crash (docs/RESULTS.md); v1 used the stack's hardware layer and its thread.
+- **The screen leaves as a draw list built natively** (2026-10-24): AgOpenWeb's only UI is its
+  web page, so C# never draws; the C++ side flattens the pool into primitives, C# relays them and
+  the page paints them (docs/API.md). The object tree does not cross the boundary.
 - **255 frames per clear-to-send and per DPO** on our side; the stack's default of 16 halves an
   in-process upload and pays a link round trip per 16 frames.
 - **Upstream HEAD.** The pin in `native/CMakeLists.txt` follows upstream; upstream fixes not yet
@@ -42,14 +45,13 @@ offered to the Open-Agriculture project once it is a library rather than a spike
 
 ## Next
 
-1. **The real API.** The current surface is a test harness: a fixed terminal NAME, the implement
+1. **The real API** (docs/API.md, in progress on the `api` branch). The spike's surface was a test harness: a fixed terminal NAME, the implement
    under test picked by function code, one soft key. A host needs the VT server's side in full:
    its configuration (memory, soft keys, data mask size, fonts, version), the managed working
    sets and their object trees (to draw them), the events (mask and soft key mask changes,
    repaint, focus, audio, shutdowns), the operator's input (soft keys, buttons, numeric and
-   string input), and storing pools (versions) through callbacks. Decide how much of the object
-   tree crosses the boundary (C structs per object, or a draw list built on the native side).
-   Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
+   string input), and storing pools (versions) through callbacks. Decided: a draw list built on
+   the native side (above). Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
    with the native libraries per runtime.
 2. **The client side**, for implements in .NET (the stack's VT client and task controller
    client), on the same one-thread model.
@@ -94,7 +96,8 @@ status.
   (GPL-3, desktop, same server class: its rules can be read, not copied into MIT code) and espVT
   (MIT, about 15 object types in about 3,000 lines).
 
-The alternative is C structs per object with the drawing in C#. Decide when item 1 starts.
+Chosen on 2026-10-24 (docs/API.md has the format as built); the alternative, C structs per object
+with the drawing elsewhere, was set aside.
 
 ## Upstream gaps in the VT server
 

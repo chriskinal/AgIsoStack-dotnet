@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- The self-test's screens (out/screens.js, from: cd dotnet/console && dotnet run -c Release -- screens ../../painter/out),
+     painted by vtpaint.js. Tap a mask to see which object it hits. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VT Screens</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --panel: #ffffff; --line: #d9d9d4; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #181816; --fg: #ececea; --muted: #9a9a94; --panel: #22221f; --line: #3a3a36; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .screen { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  .head { color: var(--muted); margin-bottom: 8px; }
+  .vt { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+  canvas.mask { width: min(480px, 100%); image-rendering: pixelated; cursor: crosshair; }
+  .keys { display: flex; flex-direction: column; gap: 4px; }
+  .keys canvas { width: 64px; image-rendering: pixelated; }
+  .hit { color: var(--muted); margin-top: 6px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>VT screens</h1>
+<div id="list"></div>
+<script src="vtpaint.js"></script>
+<script src="out/screens.js"></script>
+<script>
+"use strict";
+const images = new VtImages();
+for (const [id, img] of Object.entries(window.vtImages || {})) {
+  images.add(Number(id), img.w, img.h, Uint8Array.from(atob(img.rgba), c => c.charCodeAt(0)));
+}
+const list = document.getElementById("list");
+for (const screen of window.vtScreens || []) {
+  if (!screen.kind) continue;
+  const box = document.createElement("div");
+  box.className = "screen";
+  box.innerHTML = `<div class="head">${screen.kind} mask ${screen.mask} · implement ${screen.ws} · ${screen.items.length} items</div>`;
+  const vt = document.createElement("div");
+  vt.className = "vt";
+  const mask = document.createElement("canvas");
+  mask.className = "mask";
+  mask.width = screen.w;
+  mask.height = screen.h;
+  vtPaintMask(mask.getContext("2d"), screen, images);
+  vt.appendChild(mask);
+  if (screen.keys) {
+    const keys = document.createElement("div");
+    keys.className = "keys";
+    screen.keys.keys.forEach((_, i) => {
+      const c = document.createElement("canvas");
+      c.width = screen.keys.w;
+      c.height = screen.keys.h;
+      vtPaintKey(c.getContext("2d"), screen.keys, i, images);
+      keys.appendChild(c);
+    });
+    vt.appendChild(keys);
+  }
+  box.appendChild(vt);
+  const hit = document.createElement("div");
+  hit.className = "hit";
+  mask.addEventListener("click", e => {
+    const r = mask.getBoundingClientRect();
+    const it = vtHit(screen.items, (e.clientX - r.left) * screen.w / r.width, (e.clientY - r.top) * screen.h / r.height);
+    hit.textContent = it ? `${it.kind} ${it.o}${it.on ? "" : " (disabled)"}` : "nothing to touch there";
+  });
+  box.appendChild(hit);
+  list.appendChild(box);
+}
+</script>
+</body>
+</html>

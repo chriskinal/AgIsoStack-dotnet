@@ -7,3 +7,4 @@ bench/devices.env
 dotnet/Local.props
 __pycache__/
 .DS_Store
+painter/out/

@@ -30,8 +30,8 @@ else()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  add_library(isoshim STATIC isoshim.cpp)  # iOS loads no libraries at run time: linked into the app
+  add_library(isoshim STATIC isoshim.cpp render.cpp)  # iOS loads no libraries at run time: linked into the app
 else()
-  add_library(isoshim SHARED isoshim.cpp)
+  add_library(isoshim SHARED isoshim.cpp render.cpp)
 endif()
 target_link_libraries(isoshim PRIVATE isobus::Isobus isobus::Utility)

@@ -8,6 +8,7 @@
     <IsoShimLib Condition="'$(IsoShimLib)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">../../native/build-linux/libisoshim.so</IsoShimLib>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../IsoShim.cs" />
     <Compile Include="../IsoShimSpike.cs" />
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />

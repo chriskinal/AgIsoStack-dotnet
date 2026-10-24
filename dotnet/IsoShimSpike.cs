@@ -223,7 +223,7 @@ public static unsafe class IsoShimSpike
         return pass;
     }
 
-    /// <summary>The operator's input on InputTestPool.iop (InputTestPool.py): selecting, numbers,
+    /// <summary>The operator's input on testpools/inputs.iop (inputs.py): selecting, numbers,
     /// strings, a boolean, a list and escape; each checked by what the implement hears and what
     /// the terminal draws.</summary>
     static bool RunInput(Action<string> log)
@@ -236,7 +236,7 @@ public static unsafe class IsoShimSpike
         edits.Clear();
         heard.Clear();
         store.Clear();
-        byte[] pool = LoadPool("InputTestPool.iop");
+        byte[] pool = LoadPool("inputs.iop");
         var config = new Config();
         var host = new Host
         {
@@ -391,6 +391,20 @@ public static unsafe class IsoShimSpike
         foreach (var (id, img) in images) js.Append($"{id}: {{w: {img.W}, h: {img.H}, rgba: \"{Convert.ToBase64String(img.Rgba)}\"}},\n");
         js.Append("};\n");
         File.WriteAllText(Path.Combine(ScreenDir!, "screens.js"), js.ToString());
+        // screens.jsonl, for comparing runs (bench/pools.sh): each mask's last screen in mask order,
+        // then each picture's size and a hash of its pixels.
+        var last = new SortedDictionary<int, string>();
+        foreach (var screen in screens)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(screen);
+            if (doc.RootElement.TryGetProperty("kind", out var kind) && kind.ValueKind == System.Text.Json.JsonValueKind.String)
+                last[doc.RootElement.GetProperty("mask").GetInt32()] = screen;
+        }
+        var lines = new StringBuilder();
+        foreach (var screen in last.Values) lines.Append(screen).Append('\n');
+        foreach (var (id, img) in images.OrderBy(i => i.Key))
+            lines.Append($"{{\"type\":\"image\",\"id\":{id},\"w\":{img.W},\"h\":{img.H},\"sha256\":\"{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(img.Rgba))}\"}}\n");
+        File.WriteAllText(Path.Combine(ScreenDir!, "screens.jsonl"), lines.ToString());
         log($"screens written to {Path.Combine(ScreenDir!, "index.html")}");
     }
 }

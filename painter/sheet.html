@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Every screen of several pools at a glance, painted by vtpaint.js. bench/pools.sh writes the
+     screens and prints the address: sheet.html?dir=<folder of pool folders>&p=<pool>,<pool>,...
+     Each pool's screens are in <dir>/<pool>/screens.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pool Sheet</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #181816; --fg: #ececea; --muted: #9a9a94; --line: #3a3a36; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 12px/1.4 system-ui, sans-serif; }
+  h2 { font-size: 14px; margin: 16px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cell { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
+  .cell canvas { width: 240px; border: 1px solid var(--line); cursor: zoom-in; }
+  .cell canvas.big { width: min(480px, 100%); cursor: zoom-out; }
+</style>
+</head>
+<body>
+<div id="all"></div>
+<script src="vtpaint.js"></script>
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+const dir = params.get("dir") || "out";
+const pools = (params.get("p") || "").split(",").filter(Boolean);
+const load = src => new Promise(resolve => {
+  const s = document.createElement("script");
+  s.src = src;
+  s.onload = s.onerror = resolve;
+  document.body.appendChild(s);
+});
+(async () => {
+  for (const pool of pools) {
+    window.vtScreens = [];
+    window.vtImages = {};
+    await load(`${dir}/${pool}/screens.js`);
+    const images = new VtImages();
+    for (const [id, img] of Object.entries(window.vtImages))
+      images.add(Number(id), img.w, img.h, Uint8Array.from(atob(img.rgba), c => c.charCodeAt(0)));
+    // Each mask's last screen.
+    const byMask = new Map();
+    for (const screen of window.vtScreens) if (screen.kind) byMask.set(screen.mask, screen);
+    const head = document.createElement("h2");
+    head.textContent = `${pool} · ${byMask.size} screens`;
+    const row = document.createElement("div");
+    row.className = "row";
+    for (const screen of [...byMask.values()].sort((a, b) => a.mask - b.mask)) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.append(`${screen.kind} ${screen.mask}`);
+      const canvas = document.createElement("canvas");
+      canvas.width = screen.w;
+      canvas.height = screen.h;
+      vtPaintMask(canvas.getContext("2d"), screen, images);
+      canvas.addEventListener("click", () => canvas.classList.toggle("big"));
+      cell.append(canvas);
+      row.append(cell);
+    }
+    document.getElementById("all").append(head, row);
+  }
+})();
+</script>
+</body>
+</html>

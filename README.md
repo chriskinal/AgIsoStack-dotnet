@@ -64,19 +64,22 @@ C# carrying every frame between them. Six runs: an upload of upstream's VT3 exam
 (150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
 storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
-and that every callback came on the stepping thread. The sixth uploads `dotnet/InputTestPool.iop`
-(ours, written by `dotnet/InputTestPool.py`: every kind of input field) and enters values in each,
+and that every callback came on the stepping thread. The sixth uploads `testpools/inputs.iop`
+(ours, written by `testpools/inputs.py`: every kind of input field) and enters values in each,
 checking what the implement hears, what is refused and what the screen shows.
 
 With a pool file, `screens` uploads that pool instead and has the test implement show each of its
-data and alarm masks in turn, for a look at the renderer on other pools: isobus-implement-sim's
-`pools/base.iop` (the stack's seeder example, 206 objects, six masks with a meter, an input
-list, polygons and ellipses) draws completely.
+data and alarm masks in turn. `bench/pools.sh` does that for every pool in `testpools/`: our
+drawing and input pools (their screens committed in `testpools/expected/`, so a renderer change
+shows in `git diff`), upstream's VT3 pool, and other people's pools kept locally in the ignored
+`testpools/local/` (PoolEdit's twelve examples, the seeder). It reports what changed and prints
+the address of one page showing every screen ([testpools/README.md](testpools/README.md)).
 
 ```sh
 cd dotnet/console && dotnet run -c Release
 cd dotnet/console && dotnet run -c Release -- screens ../../painter/out   # then open painter/index.html
 cd dotnet/console && dotnet run -c Release -- screens ../../painter/out POOL.iop   # every mask of any pool
+bench/pools.sh               # every test pool: what changed, and one page with every screen
 bench/selftest.sh            # on the iPad and the Android tablet (bench/devices.env)
 ```
 

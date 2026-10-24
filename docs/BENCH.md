@@ -21,30 +21,54 @@ committed).
 - **Terminals:** the Mac (console app; on the access point network only through the cable, see
   below); an iPad Pro 12.9 2nd generation (iPadOS 17.7, on USB to the Mac for `devicectl`); a
   Galaxy Tab S7 FE SM-T733 (Android 14, `adb` over USB). Both tablets are available for testing.
+- The vcan interfaces and the `ifb` module (netem's ingress) are not persistent: `netem.sh` loads
+  `ifb` again when needed, and a reboot clears both.
 - **Kernel details on the CM4:** `txqueuelen` 10 on the CAN interfaces (the relay retries on
   `ENOBUFS`: `can_tx_retry` in its stats), `rmem_max` 4 MB, no overruns in the mcp251xfd
   counters.
 
 ## Networks
 
-**Home Wi-Fi (two hops, other traffic).** The CM4's normal state: `wlan0` on the home network,
-ssh at its home address, NTRIP and AgOpenWeb working. Every round trip crosses the air four
-times and shares the channel. Variable from minute to minute: good for finding problems, poor
-for comparing runs.
+**Home Wi-Fi (two hops, other traffic).** The CM4's normal state (address in `devices.env`):
+`wlan0` on the home network, ssh at its home address, NTRIP and AgOpenWeb working. Every round
+trip crosses the air four times and shares the channel. Variable from minute to minute: good for
+finding problems, poor for comparing runs.
 
-**The CM4 as access point (one hop).** Set up 2026-10-24 with the user's go-ahead, for repeatable
-runs:
+**The CM4 as access point (one hop).** Used 2026-10-24 with the user's go-ahead for repeatable
+runs, then removed the same day: the CM4 is back to its normal setup (home Wi-Fi, `eth0` on
+DHCP). **Set it up again only with the user's say-so.** What it was, and how to recreate it:
 
-- NetworkManager profile `bench-ap`: SSID `AOW-BENCH`, WPA2 with the key in `devices.env`,
-  5 GHz channel 149, regulatory domain US, IPv4 shared at `10.77.0.1/24` (the tablets get
-  10.77.0.x by DHCP), `autoconnect no`. So **a reboot puts the CM4 back on home Wi-Fi.**
-- While the access point is up the CM4 has no internet: NTRIP is off.
-- ssh then goes over a cable: profile `bench-eth0` puts `eth0` at static `192.168.77.2/24`
-  (priority 10, never the default route), to the Mac's built-in Ethernet (`en0`) at
-  `192.168.77.1`. The `netplan-eth0` DHCP profile is left alone.
-- Up: `sudo nmcli connection up bench-ap`. Back to home Wi-Fi: `sudo nmcli connection down
-  bench-ap`, or reboot.
-- **Change the CM4's network setup only with the user's say-so.**
+- ssh goes over a cable while the access point is up: `eth0` at static `192.168.77.2/24` to the
+  Mac's built-in Ethernet (`en0`, set by hand to `192.168.77.1`). Make this one first, over the
+  home network:
+
+  ```sh
+  sudo nmcli connection add type ethernet ifname eth0 con-name bench-eth0 ipv4.method manual \
+    ipv4.addresses 192.168.77.2/24 ipv4.never-default yes ipv6.method disabled connection.autoconnect yes
+  sudo nmcli connection modify bench-eth0 connection.autoconnect-priority 10
+  ```
+
+  The `netplan-eth0` DHCP profile is left alone.
+- The access point: SSID `AOW-BENCH`, WPA2 with `AP_PSK` from `devices.env`, 5 GHz channel 149
+  (the kernel's regulatory domain is already US, `cfg80211.ieee80211_regdom` on the command line),
+  IPv4 shared at `10.77.0.1/24` (tablets get 10.77.0.x by DHCP), `autoconnect no`, so **a reboot
+  puts the CM4 back on home Wi-Fi**:
+
+  ```sh
+  sudo nmcli connection add type wifi ifname wlan0 con-name bench-ap ssid AOW-BENCH autoconnect no \
+    802-11-wireless.mode ap 802-11-wireless.band a 802-11-wireless.channel 149 802-11-wireless.powersave 2 \
+    ipv4.method shared ipv4.addresses 10.77.0.1/24 ipv6.method disabled \
+    wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.psk "$AP_PSK"
+  sudo nmcli connection up bench-ap      # ssh now over the cable: 192.168.77.2
+  ```
+
+- While it is up the CM4 has no internet: NTRIP is off (RTK fix drops). `devices.env` then has
+  `GATEWAY=chris@192.168.77.2` and `RELAY_HOST=10.77.0.1`.
+- Back to normal: `sudo nmcli connection down bench-ap` (wlan0 rejoins home Wi-Fi in about 10 s),
+  then over the home network `sudo nmcli connection delete bench-eth0 bench-ap`. Check
+  `/api/status`: `gnss.fixQuality` back to 4 once NTRIP reconnects.
+- **On home Wi-Fi only** no setup is needed: `GATEWAY` at the CM4's home address, `RELAY_HOST`
+  the same address.
 
 **Repeatable bad networks: netem** (`bench/netem.sh`, on the gateway). Shapes only the relay's
 TCP port (2323) in both directions (egress on the device, ingress through `ifb0`), so ssh, NTRIP

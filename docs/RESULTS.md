@@ -8,9 +8,11 @@ trip (key 5000 pressed on the terminal, the implement shows alarm mask 2000).
 
 The wrapper with a terminal on channel 0 and an implement on channel 1, C# carrying every frame.
 Passed on macOS (arm64), a Galaxy Tab S7 FE (Android 14) and an iPad Pro 2nd generation
-(iPadOS 17.7, full AOT), with stop and restart in one process. `[UnmanagedCallersOnly]` callbacks
-work under iOS AOT. With the stack's default of 16 frames per clear-to-send an upload ran at about
-1,050 frames/s, below a 250 kbit/s bus; at 255 it is bus speed.
+(iPadOS 17.7, full AOT), with stop and restart in one process. The stack built unchanged for
+Android (NDK) and iOS on the first try. `[UnmanagedCallersOnly]` callbacks work under iOS AOT,
+called from the stack's own thread. With the stack's default of 16 frames per clear-to-send an
+upload ran at about 1,050 frames/s (about 22 s for the pool), below a 250 kbit/s bus; at 255, C#
+carried about 4,500 frames/s, so the boundary between C# and native code is not a bottleneck.
 
 ## 2026-10-24: Wi-Fi bench
 
@@ -26,7 +28,12 @@ implement's first request-to-send to the pool parsed:
 | The CM4 as access point | 255 | | 13.8 s | 13.8 s |
 
 The bus alone needs about 12 s. Each batch costs a round trip over the link, so the implement's
-DPO size decides it. Round trip p50 on the access point: 2.5 to 3 ms.
+DPO size decides it. Round trip p50 / p99 on home Wi-Fi 9-13 / 37-180 ms (the Mac 9-12 / 21-26,
+max 39), on the access point 2.5-3 / 13-21 ms. One bad patch on home Wi-Fi gave the Galaxy Tab
+round trips up to 704 ms (p99 583): 6 aborts on `aow-hatd`'s upload, which still completed, and a
+255 run of 18.2 s; the next run was 14.7 s. Early failures were all bench script bugs, and the
+CAN2-CAN3 wire was cleared of them: a frame sent on CAN2 reaches CAN3 once, and Linux never
+echoes it to the sending socket.
 
 ## 2026-10-24: two bugs found by capture (fixed outside this repo)
 
@@ -105,3 +112,14 @@ controlled comparison, and the reason is not proven.
 
 The Galaxy Tab with v2 (3 runs each): clean 19.2-19.4 s, 3 s cut 30.4-31.5 s, every run stopped
 cleanly.
+
+## Open observations
+
+- **Two request-to-sends 2 ms apart** (2026-10-24, iPad, 25 ms each way, one run in three):
+  `aow-hatd`'s RTS reached the terminal twice within 2 ms; the terminal logged an overwrite of the
+  session, `aow-hatd` aborted with reason 4, and its third attempt worked about 1 s later. Seen
+  once; that run's relay dump was overwritten. Relay dumps are now kept per run
+  (`dump-NAME.log` on the gateway), so look again if it recurs.
+- **Speed at 16 per DPO over a quiet link** (34 s, against about 22 s in process): part of the
+  difference was how often the v1 terminal looked for frames (10 ms in the bench, 4 ms in the
+  stack). v2 steps every 2 ms; not re-measured at 16 over the link.

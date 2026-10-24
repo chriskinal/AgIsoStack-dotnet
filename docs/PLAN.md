@@ -32,9 +32,11 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    client), on the same one-thread model.
 3. **Tests in CI**: the self-test on Linux and macOS runners; the stop-while-parsing run is the
    regression for the shutdown crash.
-4. **Upstream.** Report the managed working set's unjoined parse thread (a one-line fix: its
-   destructor joins), and note that `transferred_object_pool_parse_start` is never called. Then
-   offer the wrapper.
+4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
+   (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
+   [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.
+   Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Then offer
+   the wrapper.
 5. **Gateway**: a frame age limit after a link cut (docs/RESULTS.md); the record format of
    `bench/can_tcp_relay.py` is the starting point of a gateway protocol, which belongs with the
    gateways rather than here.

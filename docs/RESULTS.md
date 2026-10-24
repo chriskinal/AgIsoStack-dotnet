@@ -79,7 +79,9 @@ and a Mac did every time with a 3 s cut. The cause: the VT server parses each po
 owned by its `VirtualTerminalServerManagedWorkingSet`, whose destructor is `= default`, so a
 working set destroyed with a finished but unjoined parse (a pool that arrived just before stop)
 terminates the process. Upstream HEAD's server destructor joins only working sets that already
-shut down. Any application that stops a VT server as a pool arrives can hit it.
+shut down. Any application that stops a VT server as a pool arrives can hit it. Reported upstream
+with a minimal repro and the fix:
+[#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802).
 
 Wrapper v2 fixes it and changes the threading: no hardware layer, the stack's hooks supplied by
 the shim, everything on the stepping thread, and the terminal joins parse threads before it is

@@ -73,7 +73,8 @@ public:
 	    : VirtualTerminalServer(std::move(cf)), wanted_(wanted) {}
 
 	// A pool can still be parsing on its own thread; the working set that owns the thread must not
-	// be destroyed (by the base class, after this) until it has finished.
+	// be destroyed (by the base class, after this) until it has finished. Upstream's working set
+	// does not join it itself (AgIsoStack++ #802).
 	~Terminal() {
 		for (const auto &ws : managedWorkingSetList) ws->join_parsing_thread();
 	}
@@ -137,7 +138,8 @@ public:
 
 	void step() {
 		// A pool that arrived in this step's frames is parsing now, on its own thread (upstream's
-		// transferred_object_pool_parse_start hook is never called, so it is looked for here).
+		// transferred_object_pool_parse_start hook is never called, AgIsoStack++ #802, so it is
+		// looked for here).
 		for (const auto &ws : managedWorkingSetList) {
 			const bool running = ws->get_object_pool_processing_state() == WorkingSet::ObjectPoolProcessingThreadState::Running;
 			if (running && parsing_.insert(ws.get()).second) g_event(ISOSHIM_PARSE_START, 0, addressOf(ws));

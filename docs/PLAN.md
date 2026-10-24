@@ -39,7 +39,11 @@ offered to the Open-Agriculture project once it is a library rather than a spike
 - **The terminal is on the bus only while the application is.** If the app restarts or the
   tablet sleeps, the implement loses its terminal (and resets its connection after 3 s).
 - **A build per platform**: linux-arm64 and x64, win-x64, osx-arm64, Android (NDK), iOS (static,
-  linked into the app). The stack built unchanged for all of them on the first try.
+  linked into the app). The stack built unchanged for all of them on the first try. Windows is
+  built with llvm-mingw, not MSVC: a cross-compiler in Docker, and the DLL only exports C
+  functions, so the C++ runtime it uses does not matter to the caller. Windows on ARM runs the
+  x64 DLL under emulation (as AgOpenWeb's x64 build); a win-arm64 build is one more compiler
+  name if it is ever wanted.
 - **The host must step often**: a multi-frame transfer moves one step per clear-to-send, so the
   host gives the stack its own thread stepping every few milliseconds.
 
@@ -54,15 +58,17 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    the native side (above). Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
    with the native libraries per runtime. Done: config, storage, working sets, the draw list,
    soft keys and buttons, input fields (select, numbers, strings, booleans, lists, escape),
-   alarms and audio, and the C# package (`AgIsoStack.VirtualTerminal`: macOS, iOS and three
-   Android ABIs so far). Next: the self-test on the tablets and the bench on this surface, Linux
-   and Windows libraries (item 3), then merge to main. The terminal is AgOpenWeb's VT card, in its backend
+   alarms and audio, and the C# package (`AgIsoStack.VirtualTerminal`: macOS, iOS, three
+   Android ABIs, Linux x64 and arm64, Windows x64; the self-test passes on Linux and Windows,
+   and a fresh app using only the package runs on each). Next: the self-test on the tablets and
+   the bench on this surface, then merge to main. The terminal is AgOpenWeb's VT card, in its backend
    (it replaces the `aow-vtd` daemon once planned): any implement, ISOBUS or DIY, talks to
    AgOpenWeb directly (decided 2026-10-24).
 2. **The client side**, for implements in .NET (the stack's VT client and task controller
    client), on the same one-thread model.
 3. **Tests in CI**: the self-test on Linux and macOS runners; the stop-while-parsing run is the
-   regression for the shutdown crash.
+   regression for the shutdown crash. Until then every desktop platform runs on the Mac:
+   `bench/selftest.sh linux windows` (Docker for Linux, the Parallels VM for Windows).
 4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
    (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.

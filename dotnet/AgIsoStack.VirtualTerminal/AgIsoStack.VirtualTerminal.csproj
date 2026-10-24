@@ -35,15 +35,21 @@
        itself. Android: in the .aar, below. -->
   <ItemGroup>
     <None Include="$(Native)build-mac/libisoshim.dylib" Condition="Exists('$(Native)build-mac/libisoshim.dylib')" Pack="true" PackagePath="runtimes/osx/native/" Visible="false" />
-    <None Include="$(Native)build-linux/libisoshim.so" Condition="Exists('$(Native)build-linux/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-x64/native/" Visible="false" />
+    <None Include="$(Native)build-linux-x64/libisoshim.so" Condition="Exists('$(Native)build-linux-x64/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-x64/native/" Visible="false" />
+    <None Include="$(Native)build-linux-arm64/libisoshim.so" Condition="Exists('$(Native)build-linux-arm64/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-arm64/native/" Visible="false" />
     <None Include="$(Native)build-windows/isoshim.dll" Condition="Exists('$(Native)build-windows/isoshim.dll')" Pack="true" PackagePath="runtimes/win-x64/native/" Visible="false" />
     <None Include="$(Native)build-ios/libisoshim-all.a" Condition="Exists('$(Native)build-ios/libisoshim-all.a')" Pack="true" PackagePath="runtimes/ios-arm64/native/" Visible="false" />
     <None Include="AgIsoStack.VirtualTerminal.targets" Pack="true" PackagePath="buildTransitive/" />
   </ItemGroup>
-  <!-- A desktop app referencing this project: this machine's library next to it. -->
+  <!-- A desktop app referencing this project: each desktop library that is built, next to it
+       (their names differ; Linux: the build machine's architecture). An app built for another
+       machine takes the package, which has every one under runtimes/RID/native/. -->
+  <PropertyGroup>
+    <HostArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</HostArch>
+  </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <None Update="$(Native)build-mac/libisoshim.dylib" CopyToOutputDirectory="PreserveNewest" Link="libisoshim.dylib" />
-    <None Update="$(Native)build-linux/libisoshim.so" CopyToOutputDirectory="PreserveNewest" Link="libisoshim.so" />
+    <None Update="$(Native)build-linux-$(HostArch)/libisoshim.so" CopyToOutputDirectory="PreserveNewest" Link="libisoshim.so" />
     <None Update="$(Native)build-windows/isoshim.dll" CopyToOutputDirectory="PreserveNewest" Link="isoshim.dll" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">

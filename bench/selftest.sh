@@ -1,11 +1,32 @@
 #!/bin/bash
 # The in-process self-test (IsoShimSpike.RunAll: no bus, no gateway) on the iPad and the Android
-# tablet; `dotnet run` in dotnet/console does the same on the desktop.
-#   selftest.sh [ios] [android]
+# tablet, and on Linux and Windows from the Mac; `dotnet run` in dotnet/console does the same on
+# the desktop.
+#   selftest.sh [ios] [android] [linux] [windows]     (none: ios android)
+#   linux    in .NET SDK containers (Docker, OrbStack), arm64 and x64 (x64 under Rosetta), with
+#            native/build-linux-RID/ from native/build.sh linux
+#   windows  win-x64, self-contained, in the Parallels VM $WIN_VM (devices.env), with
+#            native/build-windows/ from native/build.sh windows; runs from %TEMP%\isoshim-test
 . "$(dirname "$0")/env.sh"
+REPO=$(cd "$BENCH/.." && pwd)
 F='^---|isoshim|PASS|FAIL|stopped|callback'
 for t in ${@:-ios android}; do
-  if [ $t = ios ]; then
+  if [ $t = linux ]; then
+    for P in arm64 amd64; do
+      echo "=== Linux $P"
+      docker run --rm --platform linux/$P -v "$REPO:/src:ro" mcr.microsoft.com/dotnet/sdk:10.0 bash -c '
+        mkdir -p /w && cd /src && tar cf - --exclude=bin --exclude=obj dotnet testpools/*.iop | tar xf - -C /w
+        for d in /src/native/build-linux-*; do mkdir -p /w/native/${d##*/}; cp $d/libisoshim.so /w/native/${d##*/}/; done
+        cd /w/dotnet/console && dotnet run -c Release' 2>&1 | grep -E "$F| error |Unhandled"
+    done
+  elif [ $t = windows ]; then
+    echo "=== Windows x64 (${WIN_VM:?set WIN_VM, the Parallels VM name, in bench/devices.env})"
+    W=$OUT/selftest-win-x64
+    rm -rf "$W"
+    dotnet publish "$REPO/dotnet/console" -c Release -r win-x64 --self-contained -p:DesktopOnly=true -o "$W" | grep -E " error "
+    prlctl resume "$WIN_VM" >/dev/null 2>&1
+    prlctl exec "$WIN_VM" --current-user cmd.exe /c "robocopy \\\\Mac\\AllFiles${W//\//\\} %TEMP%\\isoshim-test /MIR /NFL /NDL /NJH /NJS >nul & %TEMP%\\isoshim-test\\IsoShimConsole.exe" 2>&1 | grep -E "$F|Unhandled"
+  elif [ $t = ios ]; then
     echo "=== iPad"
     L=$OUT/selftest-ios.log
     xcrun devicectl device process launch --device "$IPAD_UDID" --console --terminate-existing $IOS_APP > $L 2>&1 &

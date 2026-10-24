@@ -218,6 +218,66 @@ public static unsafe class IsoShimSpike
         return pass;
     }
 
+    /// <summary>Uploads any pool through the test implement, has it show each of its data and alarm
+    /// masks in turn, and writes every screen to ScreenDir. No pass or fail beyond each mask being drawn.</summary>
+    public static bool Tour(string poolPath, Action<string> log)
+    {
+        byte[] pool = File.ReadAllBytes(poolPath);
+        stepThread = Environment.CurrentManagedThreadId;
+        mask = poolBad = poolObjects = -1;
+        workingSets = null;
+        screens.Clear();
+        images.Clear();
+        store.Clear();
+        var config = new Config();
+        var host = new Host
+        {
+            Send = &OnSend, Event = &OnEvent, Message = &OnMessage, Image = &OnImage,
+            Save = &OnSave, Load = &OnLoad, List = &OnList, Remove = &OnRemove,
+        };
+        int rc = isoshim_vt_start(&config, &host);
+        if (rc == 0)
+            fixed (byte* p = pool)
+                rc = isoshim_test_implement(p, pool.Length);
+        if (rc != 0) { log($"FAIL start returned {rc}"); isoshim_stop(); return false; }
+        var clock = Stopwatch.StartNew();
+        void StepFor(double ms, Func<bool> done)
+        {
+            for (var end = clock.Elapsed.TotalMilliseconds + ms; clock.Elapsed.TotalMilliseconds < end && !done();)
+            { isoshim_step(); Thread.Sleep(2); }
+        }
+        bool NotSelectable() => poolObjects >= 0 && workingSets?.Contains("\"selectable\":false") == true;
+        StepFor(15000, () => (poolObjects >= 0 && mask >= 0 && mask != 0xFFFF) || poolBad >= 0 || NotSelectable());
+        if (NotSelectable())
+        {
+            log($"{Path.GetFileName(poolPath)}: {poolObjects} objects, the working set is not selectable: nothing to show");
+            isoshim_stop();
+            return true;
+        }
+        if (poolObjects < 0 || mask < 0 || mask == 0xFFFF) { log(poolBad >= 0 ? $"FAIL pool rejected at object {poolBad}" : $"FAIL no mask within 15 s (objects {poolObjects}, mask {mask}, working sets {workingSets})"); isoshim_stop(); return false; }
+        log($"{clock.Elapsed.TotalMilliseconds,7:F0} ms  {Path.GetFileName(poolPath)}: {poolObjects} objects, showing mask {mask}");
+        StepFor(300, () => false);
+        var ids = new ushort[256];
+        int count;
+        fixed (ushort* p = ids) count = Math.Min(isoshim_test_masks(p, ids.Length), ids.Length);
+        bool ok = true;
+        foreach (ushort id in ids.Take(count))
+        {
+            string tag = $"\"mask\":{id},";
+            if (!screens.Any(s => s.Contains(tag)))
+            {
+                isoshim_test_show(id);
+                StepFor(3000, () => screens.Any(s => s.Contains(tag)));
+            }
+            bool drawn = screens.Any(s => s.Contains(tag));
+            ok &= drawn;
+            log($"  mask {id}: {(drawn ? "drawn" : "NOT drawn")}");
+        }
+        isoshim_stop();
+        WriteScreens(log);
+        return ok;
+    }
+
     // screens.js holds every screen and picture; index.html paints them with painter/vtpaint.js.
     static void WriteScreens(Action<string> log)
     {

@@ -91,6 +91,10 @@ ISOSHIM_API int32_t isoshim_version(void);
 ISOSHIM_API int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host);
 // Self-test only: upstream's VT client on channel 1 with this pool; after isoshim_vt_start.
 ISOSHIM_API int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen);
+// Self-test only: the data and alarm mask IDs in the active implement's pool (up to max of them
+// written; returns how many there are), and the test implement asking for one of them to be shown.
+ISOSHIM_API int32_t isoshim_test_masks(uint16_t *ids, int32_t max);
+ISOSHIM_API int32_t isoshim_test_show(uint16_t mask);
 ISOSHIM_API void isoshim_set_log(isoshim_log_fn fn, int32_t level);
 // Any thread. Frames are handed to the stack at the next isoshim_step.
 ISOSHIM_API void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t len, int32_t extended);

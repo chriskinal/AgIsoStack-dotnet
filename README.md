@@ -66,9 +66,15 @@ storing the pool; a stop the moment the pool starts parsing; a full run after it
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
 and that every callback came on the stepping thread.
 
+With a pool file, `screens` uploads that pool instead and has the test implement show each of its
+data and alarm masks in turn, for a look at the renderer on other pools: isobus-implement-sim's
+`pools/base.iop` (the stack's seeder example, 206 objects, six masks with a meter, an input
+list, polygons and ellipses) draws completely.
+
 ```sh
 cd dotnet/console && dotnet run -c Release
 cd dotnet/console && dotnet run -c Release -- screens ../../painter/out   # then open painter/index.html
+cd dotnet/console && dotnet run -c Release -- screens ../../painter/out POOL.iop   # every mask of any pool
 bench/selftest.sh            # on the iPad and the Android tablet (bench/devices.env)
 ```
 

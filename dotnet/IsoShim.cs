@@ -39,6 +39,8 @@ public static unsafe class IsoShim
     [DllImport(Lib)] public static extern int isoshim_version();
     [DllImport(Lib)] public static extern int isoshim_vt_start(Config* config, Host* host);
     [DllImport(Lib)] public static extern int isoshim_test_implement(byte* pool, int poolLen);
+    [DllImport(Lib)] public static extern int isoshim_test_masks(ushort* ids, int max);
+    [DllImport(Lib)] public static extern int isoshim_test_show(ushort mask);
     [DllImport(Lib)] public static extern void isoshim_set_log(delegate* unmanaged<int, byte*, void> fn, int level);
     [DllImport(Lib)] public static extern void isoshim_receive(int channel, uint id, byte* data, int len, int extended);
     [DllImport(Lib)] public static extern void isoshim_step();

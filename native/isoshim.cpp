@@ -221,6 +221,20 @@ public:
 		return false;
 	}
 
+	// Self-test: the data and alarm masks of the active implement's pool, and its working set object.
+	std::vector<std::uint16_t> masks(std::uint16_t &workingSet) const {
+		std::vector<std::uint16_t> ids;
+		const auto object = workingSetObject(activeWorkingSet);
+		if (!object) return ids;
+		workingSet = object->get_id();
+		for (const auto &entry : activeWorkingSet->get_object_tree()) {
+			const auto type = entry.second->get_object_type();
+			if (type == isobus::VirtualTerminalObjectType::DataMask || type == isobus::VirtualTerminalObjectType::AlarmMask)
+				ids.push_back(entry.first);
+		}
+		return ids;
+	}
+
 	// Soft keys and buttons: the activation message to the implement and the key's macros.
 	bool key(std::uint16_t id, std::int32_t state, bool button) {
 		const auto ws = activeWorkingSet;
@@ -462,6 +476,24 @@ int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen) {
 	});
 	g_client->initialize(false); // updated from isoshim_step, not its own thread
 	return 0;
+}
+
+int32_t isoshim_test_masks(uint16_t *ids, int32_t max) {
+	if (!g_terminal || !ids || max < 0) return -1;
+	std::uint16_t workingSet = 0;
+	const auto masks = g_terminal->masks(workingSet);
+	for (std::size_t i = 0; i < masks.size() && i < static_cast<std::size_t>(max); ++i) ids[i] = masks[i];
+	return static_cast<int32_t>(masks.size());
+}
+
+int32_t isoshim_test_show(uint16_t mask) {
+	if (!g_terminal || !g_client) return 0;
+	std::uint16_t workingSet = isobus::NULL_OBJECT_ID;
+	g_terminal->masks(workingSet);
+	if (workingSet == isobus::NULL_OBJECT_ID) return 0;
+	const bool sent = g_client->send_change_active_mask(workingSet, mask);
+	flushTransmit();
+	return sent ? 1 : 0;
 }
 
 void isoshim_set_log(isoshim_log_fn fn, int32_t level) {

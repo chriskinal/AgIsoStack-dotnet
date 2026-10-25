@@ -151,7 +151,7 @@ it in the caller's thread; the stack's own thread can meanwhile run `update()` o
 session. Both see `SendRequestToSend` and both send the RTS, back to back. The receiver overwrites
 its session and answers twice, the sender aborts on the second CTS (reason 4), the transfer fails.
 `ExtendedTransportProtocolManager` does the same and adds the session to `activeSessions` with no
-lock at all while `update()` walks it. A stress program (two control functions on vcan, the
+lock at all while `update()` walks it. A stress program (`bench/tp_race.cpp`: two control functions on vcan, the
 application thread sending 100-byte TP messages while the hardware thread updates) doubled 19
 RTSs in 4,000, each a failed transfer; with the direct call removed (the RTS left to `update()`),
 none in 4,000, at about 3.5 ms a message. It bites any implement that sends from its own thread:

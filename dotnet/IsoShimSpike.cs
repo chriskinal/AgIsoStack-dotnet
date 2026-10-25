@@ -384,8 +384,7 @@ public static unsafe class IsoShimSpike
             Check("alarms: none", StepUntil(() => alarms.LastOrDefault() == none));
             Check("the implement shows alarm mask 2000: 1", isoshim_test_show(2000) == 1);
             Check("alarms: 2000, high priority", StepUntil(() => alarms.LastOrDefault()?.Contains("\"mask\":2000,\"priority\":0,") == true));
-            // The pool says signal 1; upstream's parser drops it (PLAN.md, upstream gap 10).
-            log($"  ..   signal reported: {(alarms.LastOrDefault()?.Contains("\"signal\":1}") == true ? "1, as in the pool" : "0, not the pool's 1 (upstream gap 10)")}");
+            Check("its acoustic signal 1, as in the pool", alarms.LastOrDefault()?.Contains("\"signal\":1}") == true);
             Check("the screen is the alarm mask", StepUntil(() => screens.Any(x => x.Contains("\"mask\":2000,\"kind\":\"alarm\""))));
             Check("back to data mask 1000: alarms none", isoshim_test_show(1000) == 1 && StepUntil(() => alarms.LastOrDefault() == none));
             Check("Control Audio Signal 3 x 1000 Hz, 200 ms on, 100 ms off",

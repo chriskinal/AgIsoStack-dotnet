@@ -25,6 +25,7 @@ for t in ${@:-ios android}; do
     rm -rf "$W"
     dotnet publish "$REPO/dotnet/console" -c Release -r win-x64 --self-contained -p:DesktopOnly=true -o "$W" | grep -E " error "
     prlctl resume "$WIN_VM" >/dev/null 2>&1
+    for i in $(seq 1 60); do prlctl exec "$WIN_VM" --current-user cmd.exe /c ver >/dev/null 2>&1 && break; sleep 1; done
     prlctl exec "$WIN_VM" --current-user cmd.exe /c "robocopy \\\\Mac\\AllFiles${W//\//\\} %TEMP%\\isoshim-test /MIR /NFL /NDL /NJH /NJS >nul & %TEMP%\\isoshim-test\\IsoShimConsole.exe" 2>&1 | grep -E "$F|Unhandled"
   elif [ $t = ios ]; then
     echo "=== iPad"

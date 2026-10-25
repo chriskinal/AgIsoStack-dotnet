@@ -42,8 +42,7 @@ Everything except `isoshim_receive` and the log runs on the stepping thread, as 
     when the server repaints and the list differs from the last one sent.
   - `alarms`: every implement showing an alarm mask, shown on screen or not, sent whenever the
     list changes: `{"type":"alarms","list":[{"ws","address","mask","priority","signal"}]}`.
-    Priority 0 high, 1 medium, 2 low; acoustic signal 0 highest to 2 lowest, 3 none (always 0
-    for now: upstream gap 10). The terminal does not switch implements for an alarm: the host
+    Priority 0 high, 1 medium, 2 low; acoustic signal 0 highest to 2 lowest, 3 none. The terminal does not switch implements for an alarm: the host
     shows it over whatever is open and can bring that implement up with `isoshim_activate`.
     The implement clears it by leaving the alarm mask (usually on its own acknowledge key).
   - `audio`: Control Audio Signal, `{"type":"audio","ws","activations","frequency","on","off"}`

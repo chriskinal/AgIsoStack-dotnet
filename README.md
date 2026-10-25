@@ -94,7 +94,9 @@ vt.Stop();
 ```
 
 The terminal has one thread of its own: it runs the stack and raises every event, in order;
-calls come from any thread. One terminal per process. Details in [docs/API.md](docs/API.md).
+calls come from any thread. One terminal per process. How to build a host on it:
+[docs/GUIDE.md](docs/GUIDE.md); every member and message: [docs/API.md](docs/API.md); for AI
+assistants: [llms.txt](llms.txt).
 Without a gateway (SocketCAN, a USB adapter), `Send` and `vt.Receive(id, data, extended,
 channel)` carry the frames instead; `vt.LinkDown()` and `vt.LinkUp()` are for any link that can
 drop.

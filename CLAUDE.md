@@ -7,6 +7,9 @@ to continue it in its own repo).
 
 **Read first:**
 - **[README.md](README.md)** - build and test
+- **[docs/GUIDE.md](docs/GUIDE.md)** and **[docs/API.md](docs/API.md)** - for developers using the
+  library: the integration guide and the reference (with [llms.txt](llms.txt) for AI assistants);
+  keep them in step with the code
 - **[docs/PLAN.md](docs/PLAN.md)** - decisions and why, known costs, what is next, the drawing
   boundary, upstream gaps
 - **[docs/TRANSPORT.md](docs/TRANSPORT.md)** - the gateway link: why TCP, what the protocol needs,

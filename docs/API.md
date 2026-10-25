@@ -1,81 +1,251 @@
-# The terminal API
+# API reference
 
-The C interface a host uses to run a virtual terminal: what goes in, what comes out, and where the
-drawing is done. Replaces the spike's fixed test surface (PLAN.md, Next item 1). Written
-2026-10-24, on the `api` branch.
+Everything a host can call and everything it receives: the C# package `AgIsoStack.VirtualTerminal`,
+the JSON messages and the draw list, and the C interface under them (`native/isoshim.h`). How to
+use them together is in [GUIDE.md](GUIDE.md).
 
-## Where the drawing happens
+Contents: [VirtualTerminal](#virtualterminal) · [Options](#virtualterminaloptions) ·
+[Types](#types) · [Pool stores](#pool-stores) · [AowLink](#aowlink) · [Messages](#messages) ·
+[The draw list](#the-draw-list) · [The C interface](#the-c-interface) · [Design](#design)
 
-AgOpenWeb's only UI is its web client (CanvasKit in a browser or web view), so C# never draws: it
-carries messages between the stack and the page. The pool is therefore flattened **on the native
-side** into a draw list of plain primitives, which C# relays untouched and the page paints in
-order. One renderer, in C++, MIT, tested here against upstream's pools; the painter on the page is
-small and has no ISOBUS knowledge. The alternative (the object tree across C, C# and into the page)
-would put the renderer in JavaScript and push about 40 object types through two boundaries.
+All types are in namespace `AgIsoStack`; the raw interface is `AgIsoStack.Interop.IsoShim`.
 
-## Shape
+## VirtualTerminal
 
-```
-host ── isoshim_receive (frames in, any thread) ─────────┐
-     ── isoshim_step (every 2 ms, one thread) ───────────┤ shim: VT server, renderer
-     ── input: soft key, button, value, select, activate ┤
-     ◀─ send (frames out)                                │
-     ◀─ event (numbers: addresses, pools, shutdowns)     │
-     ◀─ message (JSON: screen, working sets, alarms)     │
-     ◀─ image (RGBA pixels, once per picture)            │
-     ◀─ storage (save, load, list, delete pool versions) ┘
-```
+`public sealed class VirtualTerminal : IDisposable`. An ISOBUS virtual terminal (server). It owns
+one thread, which runs the stack and raises every event and every store call, in order. Calls may
+come from any thread; from that thread (a handler) they run at once. One per process.
 
-Everything except `isoshim_receive` and the log runs on the stepping thread, as now.
+### Life
 
-- **Start:** `isoshim_vt_start(config, host)`. The config is the terminal's NAME (identity,
-  manufacturer, function instance), preferred address, data mask size, soft key descriptor size,
-  physical and virtual soft key counts, VT version, supported fonts, packets per clear-to-send.
-  The host struct holds the callbacks. One terminal per process.
-- **The self-test's implement** stays as a test helper: `isoshim_test_implement(pool)` puts
-  upstream's VT client on channel 1 beside the terminal.
-- **Messages out** are JSON (UTF-8, one object per call, `"type"` first), so the host can forward
-  them to the page as they are and C# needs no decoder:
-  - `workingSets`: every implement connected, with its NAME (16 hex digits), address, pool state
-    (`transferring`, `parsing`, `ready`, `failed`, with progress), which one is active.
-  - `screen`: the active implement's data or alarm mask and its soft key mask as draw lists. Sent
-    when the server repaints and the list differs from the last one sent.
-  - `alarms`: every implement showing an alarm mask, shown on screen or not, sent whenever the
-    list changes: `{"type":"alarms","list":[{"ws","address","mask","priority","signal"}]}`.
-    Priority 0 high, 1 medium, 2 low; acoustic signal 0 highest to 2 lowest, 3 none. The terminal does not switch implements for an alarm: the host
-    shows it over whatever is open and can bring that implement up with `isoshim_activate`.
-    The implement clears it by leaving the alarm mask (usually on its own acknowledge key).
-  - `audio`: Control Audio Signal, `{"type":"audio","ws","activations","frequency","on","off"}`
-    (Hz and ms; activations 0 stops a sounding signal); `volume`: Set Audio Volume,
-    `{"type":"volume","ws","percent"}`. Upstream acknowledges both and drops them (gap 5); the
-    shim hears them alongside it.
-  - The implement's ESC command closes its open field and is answered (upstream does not
-    handle it, gap 8); the host gets the edit message with `"o":null`.
-- **Images** come by their own callback, `image(id, width, height, rgba)`, once per picture graphic
-  (decoded natively: 1, 4 and 8 bit, run-length, the working set's colour table, transparency);
-  the draw list refers to them by id.
-- **Input back:** `isoshim_soft_key(id, state)`, `isoshim_button(id, state)` (state: released,
-  pressed, still held, aborted; a press is always followed by a release or an abort),
-  `isoshim_select(id)`, `isoshim_set_number(id, value)` (input number, boolean, list),
-  `isoshim_set_string(id, utf8)`, `isoshim_activate(name)`. The terminal updates its own copy
-  (the object or its variable), sends the message to the implement, and runs the object's macros.
-- **Storage** by callback, keyed by the implement's 64-bit NAME and the version label: `save`,
-  `load`, `list`, `delete`. A callback that returns data hands it back with
-  `isoshim_reply(data, len)` before it returns (the shim copies it), so no memory crosses the
-  boundary in the other direction.
+| Member | |
+|---|---|
+| `VirtualTerminal(VirtualTerminalOptions options)` | Throws `ArgumentException` if `options.Send` is null. |
+| `void Start()` | Starts the terminal on its own thread; returns when it is running. Throws `InvalidOperationException` if another terminal is running in this process or the native library refuses the options. A stopped terminal can be started again. |
+| `void Stop()` | Takes the terminal off the bus and ends its thread, waiting for any pool still parsing. Calls not yet done fail. From the terminal's own thread it only asks: the terminal stops after the current step. Safe at any point; does nothing if not running. |
+| `void Dispose()` | `Stop()`. |
+| `bool IsRunning` | |
+| `int Address` | The terminal's address on the bus, -1 before it has claimed one. |
 
-## The draw list
+### Frames
 
-Coordinates are pixels in the area being drawn, origin top left, the painter scales the whole
-area. Colours are `#rrggbb`, already resolved through the working set's colour table. Items are
-painted in order; each carries the id of the object it came from (`o`), so the page can match a
-tap to an object and a later version can patch by id.
+| Member | |
+|---|---|
+| `void Receive(uint id, ReadOnlySpan<byte> data, bool extended = true, int channel = 0)` | A frame from the bus. Any thread; returns at once. At most 8 bytes (`ArgumentException`). |
+| `void LinkDown()` | The link to the bus is gone. Any thread. |
+| `void LinkUp()` | The link is back: every soft key or button held when it went, or pressed while it was down, is sent as aborted. Any thread. |
+
+Frames out go through `VirtualTerminalOptions.Send`. `AowLink`'s `Attach` makes all of these calls for you.
+
+### The operator
+
+All of these return a task that completes once the terminal has acted. It fails with
+`InvalidOperationException` if the terminal is not running. Object ids are in the shown
+implement's pool.
+
+| Member | Result |
+|---|---|
+| `Task<bool> SoftKeyAsync(ushort objectId, KeyState state)` | A Key object in the shown soft key mask. True: sent. |
+| `Task<bool> ButtonAsync(ushort objectId, KeyState state)` | A Button object on the shown mask. True: sent. |
+| `Task<bool> ActivateAsync(ulong name)` | Shows this implement. True: it is now the one shown. |
+| `Task<bool> SelectAsync(ushort objectId, bool open)` | Gives an input field or button the focus; `open`: an editor is up for it (an `edit` message follows). True: done. |
+| `Task<bool> DeselectAsync()` | Gives nothing the focus. |
+| `Task<InputResult> SetNumberAsync(ushort objectId, uint value)` | Input number (raw value, before offset and scale), input boolean (0 or 1), input list (the index). Selects the field first if needed; closes it. |
+| `Task<InputResult> SetStringAsync(ushort objectId, string text)` | Input string. |
+| `Task<bool> EscapeAsync()` | Abandons the open field (VT ESC). True: one was open. |
+| `Task<T> InvokeAsync<T>(Func<T> call)` | Runs `call` on the terminal's thread between steps: for the raw interface, which belongs to that thread. |
+
+`KeyState`: `Pressed` (1), `Held` (2, repeat about every 200 ms while down: the host repeats it),
+`Released` (0), `Aborted` (3, the press ended without a release). A press must end in a release or
+an abort.
+
+`InputResult`: `Entered` (1, sent to the implement), `Invalid` (-1, not a valid value: the field is
+unchanged and stays open), `NotAnInput` (0, not an enabled input on the shown screen).
+
+### Events
+
+All on the terminal's thread.
+
+| Event | |
+|---|---|
+| `Action<string> Message` | Every [message](#messages), as JSON. |
+| `Action<VtImage> Image` | A picture, once, before the first screen that refers to it. |
+| `Action<ulong?, IReadOnlyList<WorkingSetInfo>> WorkingSetsChanged` | The shown implement's NAME (null: none) and every implement connected. From the `workingSets` message. |
+| `Action<IReadOnlyList<AlarmInfo>> AlarmsChanged` | Every implement showing an alarm mask, shown or not. From `alarms`. |
+| `Action<AudioSignal> Audio` | Control Audio Signal from an implement. From `audio`. |
+| `Action<ulong, int> Volume` | Set Audio Volume: the implement's NAME and the percentage. From `volume`. |
+| `Action<int> AddressClaimed` | The terminal has this address. |
+| `Action<int, int> PoolLoaded` | An implement's pool is up: its address, the number of objects. |
+| `Action<int, int> PoolRejected` | An implement's pool was refused: its address, the object at fault. |
+| `Action<int, int> ImplementLost` | An implement went away: its address, the reason (0 no maintenance message for 3 s, 1 it started over). |
+| `Action<Exception> HandlerFailed` | A handler, `Send` or the store threw; the terminal carries on. |
+
+## VirtualTerminalOptions
+
+`public sealed class VirtualTerminalOptions`, init-only properties. Zero (or null) takes the default.
+
+| Property | Type | Default | |
+|---|---|---|---|
+| `Send` | `FrameSender` | required | `delegate void FrameSender(int channel, uint id, ReadOnlySpan<byte> data, bool extended)`. Called on the terminal's thread; the span is valid only during the call. Queue and return. |
+| `Store` | `IPoolStore?` | `MemoryPoolStore` | Pool versions. |
+| `Identity` | `uint` | 3 | NAME identity number (21 bits). |
+| `Manufacturer` | `ushort` | 1407 | NAME manufacturer code (11 bits). |
+| `FunctionInstance` | `byte` | 0 | NAME function instance. |
+| `PreferredAddress` | `byte` | 0x26 | The address claimed first. |
+| `MaskWidth`, `MaskHeight` | `ushort` | 480 | Data mask in pixels. |
+| `KeyWidth`, `KeyHeight` | `byte` | 80 | Soft key in pixels. |
+| `PhysicalKeys` | `byte` | 6 | Soft keys shown at once. |
+| `VirtualKeys` | `byte` | 64 | Soft keys a mask may hold. |
+| `NavigationKeys` | `byte` | 0 | |
+| `Version` | `byte` | 5 | VT version, 3 to 6. |
+| `SmallFonts`, `LargeFonts` | `byte` | 0xFF | Supported font bitfields (Get Text Font Data). |
+| `PacketsPerCts` | `byte` | 255 | Frames per clear-to-send and per DPO, received and sent. |
+| `StepMilliseconds` | `int` | 5 | Longest gap between steps; an arriving frame or call wakes the terminal at once. |
+| `Log` | `Action<int, string>?` | none | The stack's log: level (0 debug .. 4 critical), text. From the terminal's thread and a pool's parsing thread. |
+| `LogLevel` | `int` | 2 | Lowest level passed to `Log`. |
+
+## Types
+
+| Type | |
+|---|---|
+| `record WorkingSetInfo(ulong Name, int Address, PoolState State, int Progress, int? Objects, bool? Selectable)` | One implement. `Progress`: upload percent. `Objects`: once parsed. `Selectable`: from its working set object, once parsed. |
+| `enum PoolState { Waiting, Transferring, Parsing, Ready, Failed }` | |
+| `record AlarmInfo(ulong Name, int Address, ushort Mask, int Priority, int Signal)` | Priority 0 high, 1 medium, 2 low. Signal 0 highest, 1 medium, 2 lowest, 3 none. |
+| `record AudioSignal(ulong Name, int Activations, int FrequencyHz, int OnMilliseconds, int OffMilliseconds)` | `Activations` 0: stop the signal sounding. |
+| `record VtImage(uint Id, int Width, int Height, byte[] Rgba)` | 4 bytes a pixel, rows top first. |
+| `enum KeyState`, `enum InputResult` | Above. |
+
+## Pool stores
+
+`public interface IPoolStore`. Pool versions, keyed by the implement's NAME and its version label
+(7 bytes, or 32 for VT 5 and 6 extended labels; the two lengths are separate versions). Called on
+the terminal's thread: keep it quick. An exception counts as a failure and goes to `HandlerFailed`.
+
+| Method | |
+|---|---|
+| `bool Save(ulong name, ReadOnlySpan<byte> label, ReadOnlySpan<byte> data, bool append)` | Stores a pool or a part of it: the first part with `append` false. False: not stored. |
+| `byte[]? Load(ulong name, ReadOnlySpan<byte> label)` | The pool, or null. |
+| `IEnumerable<byte[]> List(ulong name, int labelLength)` | The labels stored for this implement of this length. |
+| `bool Remove(ulong name, ReadOnlySpan<byte> label)` | |
+| `bool RemoveAll(ulong name, int labelLength)` | Every version of this label length. |
+
+`FilePoolStore(string directory)`: `DIRECTORY/NAME/LABEL.iop`, NAME and LABEL in hex; creates the
+folder. `MemoryPoolStore()`: in memory, `Count` versions; the default. A store that refuses costs
+the implement its connection: upstream's VT client, which most implements use, waits out the
+reply and starts over.
+
+## AowLink
+
+`public sealed class AowLink : IDisposable`. The client end of the AOW link protocol version 1
+([TRANSPORT.md](TRANSPORT.md) section 5): one TCP connection to a CAN gateway. Its events come on
+the link's own thread.
+
+| Member | |
+|---|---|
+| `AowLink(string host, int port = 2323, string name = "", LinkRole role = LinkRole.Control)` | `name`: shown by the gateway. `Monitor`: receive only (a gateway may refuse it). |
+| `void Start()` | Connects on its own thread, and connects again whenever the link drops: at once, then every 250 ms, each attempt giving up after 500 ms (5 s after a version refusal). |
+| `void Stop()` | Closes the link and ends its thread. |
+| `void Send(int channel, uint id, ReadOnlySpan<byte> data, bool extended)` | A frame to the bus. Any thread, returns at once. Dropped and counted while the link is down; never held for the next link. |
+| `bool IsConnected` | |
+| `GatewayInfo? Gateway` | The gateway of the current link, or of the last one. |
+| `long FramesDropped` | Frames given to `Send` while the link was down. |
+| `const int DefaultPort = 2323`, `const byte Version = 1` | |
+
+| Event | |
+|---|---|
+| `LinkFrameHandler FrameReceived` | `(int channel, uint id, ReadOnlySpan<byte> data, bool extended, uint timeUs)`: `timeUs` is the gateway's receive time on its own clock, wrapping, for spacing only. |
+| `Action<GatewayInfo> Connected` | The HELLOs are exchanged. |
+| `Action<LinkCloseReason, string> Disconnected` | Down, and why. It is tried again by itself. |
+| `Action<BusStatus> StatusReceived` | A bus's state, on connecting, on any change and every second. |
+| `Action<double> RoundTrip` | Milliseconds, from each heartbeat. |
+| `Action<Exception> HandlerFailed` | A handler threw; the link carries on. |
+
+| Type | |
+|---|---|
+| `record GatewayInfo(string Name, IReadOnlyList<GatewayChannel> Channels)` | |
+| `record GatewayChannel(int Channel, int Bitrate, bool ListenOnly, string Name)` | |
+| `record BusStatus(int Channel, BusState State, int TxErrors, int RxErrors, long RxDropped, long TxDropped)` | Drop counts from the start of the link. |
+| `enum BusState { ErrorActive, ErrorWarning, ErrorPassive, BusOff, Down }` | |
+| `enum LinkCloseReason { Lost, Version, Busy, Timeout, ProtocolError, ShuttingDown }` | `Busy`: the gateway has a control client already. `Timeout`: nothing heard for 1 s. |
+| `enum LinkRole { Control, Monitor }` | |
+
+`static void VirtualTerminalLink.Attach(this VirtualTerminal terminal, AowLink link)`: frames from
+the link to `Receive`, `Connected` to `LinkUp`, `Disconnected` to `LinkDown`. The terminal's frames
+go out by its options: `Send = link.Send`.
+
+## Messages
+
+`VirtualTerminal.Message` (and the C `message` callback): one JSON object per call, UTF-8, `"type"`
+first. NAMEs are 16 hex digits. Unknown fields may be added later; ignore them.
+
+### `screen`
+
+The shown implement's mask and soft keys as [draw lists](#the-draw-list). Sent whenever it differs
+from the last one sent; always complete.
 
 ```json
 {"type":"screen","ws":"A00084000C01FFFF","mask":1000,"kind":"data","w":480,"h":480,"bg":"#ffffff",
  "items":[...],
- "keys":{"mask":4000,"w":80,"h":80,"bg":"#c0c0c0","keys":[{"o":5000,"code":5,"bg":"#ff0000","items":[...]}]}}
+ "keys":{"mask":4000,"w":80,"h":80,"bg":"#c0c0c0","keys":[{"o":5000,"code":5,"bg":"#ff0000","items":[...]},null]}}
 ```
+
+- `ws` null: no implement is shown (`{"type":"screen","ws":null}`).
+- `kind`: `data` or `alarm`; null when the active mask is neither (then `items` is empty and `keys` null).
+- An alarm mask adds `priority` and `signal` (as in `alarms`).
+- `keys`: null when the mask has no soft key mask. `keys.keys` in order; null keeps an empty place.
+  Each key: `o` its id (for `SoftKeyAsync`), `code` its key code, `bg`, `items` in key pixels.
+
+### `edit`
+
+An input field opened (the operator selected it, or the implement did) or closed (`"o":null`).
+
+```json
+{"type":"edit","ws":"A0001000AFE00002","o":9000,"kind":"number","value":50,"min":0,"max":100,"offset":0,"scale":0.5,"decimals":1,"text":"25.0"}
+{"type":"edit","ws":"...","o":8000,"kind":"string","value":"HELLO","length":10,"chars":"ABC...Z ","only":true}
+{"type":"edit","ws":"...","o":7000,"kind":"bool","value":0}
+{"type":"edit","ws":"...","o":10000,"kind":"list","value":0,"w":200,"h":20,"options":[[...items...],null]}
+{"type":"edit","ws":"...","o":null}
+```
+
+- **number**: `value`, `min`, `max` are raw; the operator sees `(raw + offset) * scale` to
+  `decimals` places, as `text`.
+- **string**: `value` with its padding trimmed; `length` the most characters; `chars` with `only`
+  true are the characters allowed, with `only` false the ones refused (absent: any). Stored in the
+  field's encoding (ISO 8859-1, or UTF-16 when the pool's value is), padded with spaces.
+- **bool**: 0 or 1.
+- **list**: each option a draw list of `w` x `h` at 0,0; null an empty place. Enter the index.
+
+The field closes on entry, on escape, when the focus moves, when the mask changes under it, and on
+the implement's ESC command. Macros run on selection, deselection, entry, a new value, and escape.
+
+### `workingSets`
+
+```json
+{"type":"workingSets","active":"A00084000C01FFFF","list":[
+ {"name":"A00084000C01FFFF","address":128,"state":"ready","progress":100,"objects":88,"selectable":true}]}
+```
+
+`active` null: none shown. `state`: `waiting`, `transferring` (with `progress` in percent),
+`parsing`, `ready`, `failed`. `objects` once parsed; `selectable` once its working set object is
+known. Sent when the list, a state, the shown implement, or the progress in whole percent changes.
+
+### `alarms`, `audio`, `volume`
+
+```json
+{"type":"alarms","list":[{"ws":"A00084000C01FFFF","address":128,"mask":2000,"priority":0,"signal":1}]}
+{"type":"audio","ws":"A00084000C01FFFF","activations":3,"frequency":1000,"on":200,"off":100}
+{"type":"volume","ws":"A00084000C01FFFF","percent":80}
+```
+
+`alarms` lists every implement whose active mask is an alarm mask, shown or not, whenever that
+changes. The terminal doesn't switch implements for an alarm. `audio`: Hz and ms; `activations` 0
+stops a sounding signal.
+
+## The draw list
+
+Pixels in the area being drawn (the mask, a key, a list option), origin top left; the painter
+scales the whole area. Colours `#rrggbb`, already resolved through the working set's colour
+table. Items are painted in order, and each has `t` (its kind) and `o` (the object it came from).
 
 | `t` | Fields | From |
 |---|---|---|
@@ -85,97 +255,69 @@ tap to an object and a later version can patch by id.
 | `ellipse` | `x y w h`, `kind` (closed, open, segment, section), `a0 a1` (degrees), `fill line lw` | ellipses, meters, arched bar graphs |
 | `poly` | `pts` (x, y pairs), `closed`, `fill line lw` | polygons, needles |
 | `text` | `x y w h`, `s`, `c`, `bg` (absent: transparent), `fw fh` (font cell), `style` (bold, crossed, underlined, italic, inverted, flash), `hj vj` (0 left/top, 1 middle, 2 right/bottom), `wrap` | output and input strings, numbers, lists |
-| `image` | `x y w h`, `img` | picture graphics, fill patterns |
-| `hit` | `x y w h`, `kind` (`button`, `input`, `key`), `latch`, `on` (enabled), `sel` (has the focus), `open` (open for input) | what the operator can touch |
+| `image` | `x y w h`, `img` (a `VtImage` id) | picture graphics, fill patterns |
+| `hit` | `x y w h`, `kind` (`button` or `input`), `on` (enabled), `latch` and `latched` (latching buttons), `sel` (has the focus), `open` (being edited) | what the operator can touch on the mask; soft keys are touched by their cell in `keys` |
 | `box` | `x y w h`, `label` | an object the renderer does not draw: a labelled box, never dropped |
 
-Fonts: the standard's fonts are fixed cells (6 x 8 up to 128 x 192); the painter fills the cell
-with a monospace face, as espVT does with one scaled font. Numbers are formatted natively (scale,
-offset, decimals, exponential, leading zeros, blank zero, truncation).
+Fonts are the standard's fixed cells (6 x 8 up to 128 x 192); fill the cell with a monospace face.
+Numbers arrive formatted (scale, offset, decimals, exponential, leading zeros, blank zero,
+truncation). The reference painter is `painter/vtpaint.js`: `VtImages`, `vtPaintMask`,
+`vtPaintKey`, `vtPaintItems`, `vtHit`.
 
-## Input fields
+Not drawn yet, so shown as `box`: animations, graphics contexts, scaled graphics, external
+objects, VT 6 window masks and key groups.
 
-A tap on an `input` hit calls `isoshim_select(id, 1)`: the field takes the focus, the implement
-hears it selected and open, and the host gets an edit message describing it, from inside that
-call. The page shows an editor for it and answers with a value or an escape; either closes it,
-and the host gets `{"type":"edit","ws":...,"o":null}`. The implement can also open a field
-itself (Select Input Object); the same edit message follows.
+## The C interface
 
-```json
-{"type":"edit","ws":"A0001000AFE00002","o":9000,"kind":"number","value":50,"min":0,"max":100,"offset":0,"scale":0.5,"decimals":1,"text":"25.0"}
-{"type":"edit","ws":"...","o":8000,"kind":"string","value":"HELLO","length":10,"chars":"ABC...Z ","only":true}
-{"type":"edit","ws":"...","o":7000,"kind":"bool","value":0}
-{"type":"edit","ws":"...","o":10000,"kind":"list","value":0,"w":200,"h":20,"options":[[...items...],null,...]}
-```
+`native/isoshim.h`, for hosts not in .NET (the C# package is built on it; `AgIsoStack.Interop.IsoShim`
+declares it for P/Invoke, callbacks as `[UnmanagedCallersOnly]` function pointers, as iOS AOT
+requires). Library `isoshim` (`libisoshim.dylib`, `.so`, `isoshim.dll`; on iOS the static
+`libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 4.
 
-- **number**: values are raw; what the operator sees is `(raw + offset) * scale` to `decimals`
-  places. `isoshim_set_number(id, raw)` takes `min <= raw <= max`.
-- **string**: `value` has its padding spaces trimmed; `length` is the most characters it holds;
-  `chars` with `only` true are the characters allowed, with `only` false the ones refused.
-  `isoshim_set_string(id, utf8, len)`; stored in the field's own encoding (ISO 8859-1, or UTF-16
-  when the pool's value is), padded with spaces.
-- **bool**: `isoshim_set_number(id, 0 or 1)`; a touch UI toggles without an editor.
-- **list**: each option is a draw list in the field's size at 0,0, `null` for an empty place.
-  `isoshim_set_number(id, index)`.
+**Threading.** The stack runs on the thread that calls `isoshim_step` and nowhere else. Every
+function except `isoshim_receive` and `isoshim_set_log`, and every callback except the log, belongs
+to that thread. `isoshim_receive` may be called from any thread: it queues the frame for the next
+step. Call `isoshim_step` every few milliseconds (a multi-frame transfer moves one step per
+clear-to-send).
 
-The set calls return 1 (entered, sent), -1 (not a valid value: the field is unchanged and stays
-open) or 0 (not an enabled input on the current screen). A value can be set without selecting
-first; the field is selected on the way. `isoshim_escape()` abandons the open field (VT ESC).
-Moving the focus away from an open field, or the mask changing under it, escapes it. Macros run
-on selection, deselection, entry (of a value and of a new value) and escape. Messages the stack
-cannot send at once (a multi-frame message while the last one to that implement is closing) wait
-in order for a later step.
+| Function | |
+|---|---|
+| `int32_t isoshim_vt_start(const isoshim_vt_config *, const isoshim_host *)` | 0 started; -1 bad arguments; -2 already running. Zero config fields take the defaults above. |
+| `void isoshim_step(void)` | Queued frames in, timers, frames out, the screen if it changed. |
+| `void isoshim_stop(void)` | Safe at any point, including mid-parse; `isoshim_vt_start` may follow. |
+| `void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t len, int32_t extended)` | Any thread. The terminal is channel 0. |
+| `void isoshim_reply(const uint8_t *data, int32_t len)` | From inside `load` (the pool) or `list` (each label): copied. |
+| `void isoshim_set_log(isoshim_log_fn, int32_t level)` | |
+| `int32_t isoshim_soft_key(uint16_t id, int32_t state)`, `isoshim_button(...)` | 1: sent. |
+| `int32_t isoshim_activate(uint64_t name)` | 1: now shown. |
+| `int32_t isoshim_select(uint16_t id, int32_t open)` | 0xFFFF selects nothing. 1: done. |
+| `int32_t isoshim_set_number(uint16_t id, uint32_t value)`, `isoshim_set_string(uint16_t id, const char *utf8, int32_t len)` | 1 entered, -1 invalid, 0 not an input. |
+| `int32_t isoshim_escape(void)` | 1: a field was open. |
+| `isoshim_test_implement`, `isoshim_test_masks`, `isoshim_test_show`, `isoshim_test_send` | The self-test's implement on channel 1. Not for hosts. |
 
-A reference painter (`painter/vtpaint.js`, Canvas 2D, MIT) lives here for the tests and as the
-starting point for AgOpenWeb's page.
+`isoshim_host` holds the callbacks (`send`, `event` and `message` required; `image`, `save`,
+`load`, `list`, `remove` optional: a missing store callback means nothing is stored).
 
-## Steps
+| Callback | |
+|---|---|
+| `send(channel, id, data, len, extended)` | A frame out. It may call `isoshim_receive`. |
+| `event(kind, a, b)` | `ISOSHIM_SERVER_ADDRESS` (a: address), `ISOSHIM_POOL_OK` (a: objects, b: address), `ISOSHIM_POOL_BAD` (a: faulty object, b: address), `ISOSHIM_MASK` (a: mask shown, b: address), `ISOSHIM_PARSE_START` (b: address), `ISOSHIM_WS_SHUTDOWN` (a: reason, b: address), `ISOSHIM_ACTIVE` (a: address shown, -1 none). |
+| `message(json, len)` | A [message](#messages); the text is valid during the call. |
+| `image(id, width, height, rgba)` | |
+| `save(name, label, labelLen, data, len, append)` | 1: saved. |
+| `load(name, label, labelLen)` | Reply with the pool, return 1; 0: none. |
+| `list(name, labelLen)` | One reply per label. |
+| `remove(name, label, labelLen)` | `label` null: every version of `labelLen`. 1: removed. |
+| `log(level, text)` | Can come from the pool parsing thread. |
 
-1. The config, the host struct, working sets and storage; the self-test and the bench on the new
-   surface.
-2. The renderer: masks, containers, pointers, shapes, text, numbers, variables, lists, pictures,
-   soft keys, buttons; meters and bar graphs; labelled boxes for the rest. The self-test writes
-   the VT3 pool's screens as JSON and an HTML page that paints them, to look at.
-3. Input: soft keys and buttons by id, selecting an input, entering values, macros.
-4. Alarms and audio; then the upstream gaps the terminal meets (PLAN.md), as upstream pull
-   requests.
-5. The C# package: one `VirtualTerminal` class over the C interface, native libraries per
-   runtime, NuGet-shaped.
+## Design
 
-## The C# package
+The page is the only UI, so the pool is flattened **natively** into a draw list that C# relays
+untouched and the page paints in order: one renderer, in C++ and tested here against real pools,
+with a painter that knows nothing of ISOBUS. Passing the object tree through C, C# and into the
+page instead would put the renderer in JavaScript and push about 40 object types through two
+boundaries. The terminal runs the stack on one thread with no hardware layer: the host is the bus
+([PLAN.md](PLAN.md) has the decisions and their reasons).
 
-`dotnet/AgIsoStack.VirtualTerminal` (package `AgIsoStack.VirtualTerminal`; README.md has an
-example). `VirtualTerminal` owns a thread that steps the stack every few milliseconds, at once
-when a frame arrives or a call is queued. Every event and every `IPoolStore` call comes on that
-thread, in order; a handler that throws is reported through `HandlerFailed`. Calls
-(`SoftKeyAsync`, `SelectAsync`, `SetNumberAsync`, ...) come from any thread and complete when
-the terminal has done them; from a handler they run at once. `InvokeAsync` runs code there, for
-the raw interface (`AgIsoStack.Interop.IsoShim`). `Stop` from another thread waits for the
-terminal to end; from the terminal's own thread (code that resumed there after awaiting
-something a handler completed) it only asks. `Message` carries every message as JSON, for the
-page; `WorkingSetsChanged`, `AlarmsChanged`, `Audio`, `Volume`, `AddressClaimed`, `PoolLoaded`,
-`PoolRejected` and `ImplementLost` are the ones the host itself acts on, typed. Stores:
-`FilePoolStore` (a folder per NAME, a file per label) and `MemoryPoolStore`, the default: with no
-store the terminal still stores, for as long as the process runs, because an upstream implement
-told "not stored" drops its connection (PLAN.md, upstream gaps). One terminal per process: the
-native stack is one.
-
-## The gateway link
-
-`AowLink` is the client end of the AOW link protocol (docs/TRANSPORT.md section 5): one TCP
-connection to a gateway on the bus. It says hello, keeps a heartbeat both ways, drops the link
-after 1 s of silence, and connects again on its own (at once, then every 250 ms; each attempt
-gives up after 500 ms). `Send` may be called from any thread and returns at once; a frame sent
-while the link is down is dropped and counted (`FramesDropped`), never held for the next link.
-Its events come on the link's own thread: `FrameReceived` (channel, id, data, extended, the
-gateway's receive time in µs), `Connected` (the gateway's name and channels), `Disconnected`
-(why: lost, version, busy, timeout, protocol error, shutting down), `StatusReceived` (each
-bus's state, error counters and drops) and `RoundTrip` (ms, from each heartbeat). `Role` monitor
-receives only.
-
-`vt.Attach(link)` wires a terminal to it: frames from the bus to `Receive`, and the link's state
-to `LinkDown` and `LinkUp`; the terminal's `Send` is `link.Send`. While the link is down the
-terminal keeps running and its frames are lost; the implements decide by their own timeouts (3 s).
-When it is back, every soft key or button that was held when it went, or pressed while it was
-down, is sent as aborted, so a press is always followed by a release.
-
+`VT3TestPool.iop` (in `dotnet/`) is upstream AgIsoStack++'s example pool, MIT, embedded in the
+test apps.

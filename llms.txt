@@ -1,22 +1,25 @@
 # AgIsoStack.VirtualTerminal
 
 > An ISOBUS virtual terminal (ISO 11783-6) for .NET 10 on macOS, Linux, Windows, iOS and Android:
-> AgIsoStack++'s VT server run on one thread, with the shown screen sent out as a JSON draw list for
-> a page to paint. The host supplies CAN frames, a page, and optionally pool storage. MIT.
+> AgIsoStack++'s VT server run on one thread (one to four terminals, as displays in one cab), with
+> each terminal's shown screen sent out as a JSON draw list for a page to paint. The host supplies CAN frames, a page, and optionally pool storage. MIT.
 
 Implements bring their own UI (object pools), so a host designs no screens. It forwards JSON to a
 page and turns touches into calls. Package `AgIsoStack.VirtualTerminal`, namespace `AgIsoStack`.
 
 Rules an integration must keep:
 
-- One `VirtualTerminal` per process. Call `Start()` before the link, and stop the link before `Stop()`.
-- Every event and every `IPoolStore` call comes on the terminal's own thread. Marshal to the UI with
+- One `VirtualTerminalStack` per process, with `Count` (1 to 4) terminals in `stack.Terminals`; each
+  `VirtualTerminal` has its own events and calls. Implements choose their terminal (in their own
+  menu); the host can't move them. Call `stack.Start()` before the link, and stop the link before
+  `stack.Stop()`.
+- Every event and every `IPoolStore` call comes on the stack's own thread. Marshal to the UI with
   a non-blocking post (BeginInvoke, Post); never a synchronous Invoke or `.Wait()` from a handler.
   Keep handlers short: the bus waits on them.
 - Calls (`SoftKeyAsync`, `ButtonAsync`, `SelectAsync`, `SetNumberAsync`, `SetStringAsync`,
   `EscapeAsync`, `ActivateAsync`) work from any thread and return tasks. They fail with
-  `InvalidOperationException` when the terminal isn't running.
-- `Send` (in options) runs on the terminal's thread and its span is valid only during the call:
+  `InvalidOperationException` when the stack isn't running.
+- `Send` (in options) runs on the stack's thread and its span is valid only during the call:
   copy it, queue it, return. `Receive` and `AowLink.Send` work from any thread.
 - Every key or button press must end in `Released` or `Aborted`. While a key is down the host
   sends `Held` about every 200 ms (the terminal doesn't repeat by itself).
@@ -31,12 +34,13 @@ Minimal host:
 
 ```csharp
 var link = new AowLink(gatewayHost, name: "My terminal");
-var vt = new VirtualTerminal(new VirtualTerminalOptions { Send = link.Send, Store = new FilePoolStore(poolDir) });
-vt.Attach(link);
-vt.Message += json => page.Post(json);   // screen, edit, workingSets, alarms, audio, volume
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions { Send = link.Send, Store = new FilePoolStore(poolDir) });
+stack.Attach(link);
+stack.HandlerFailed += e => log(e);
+var vt = stack.Terminals[0];
+vt.Message += json => page.Post(json);   // screen, edit, workingSets, alarms, audio, volume, identify
 vt.Image += image => page.PostImage(image);
-vt.HandlerFailed += e => log(e);
-vt.Start();
+stack.Start();
 link.Start();
 ```
 
@@ -49,7 +53,7 @@ link.Start();
 ## Code
 
 - [Reference painter](painter/vtpaint.js): Canvas 2D, paints a `screen` message; `vtHit` for touches
-- [Self-test](dotnet/VirtualTerminalTest.cs): drives the class the way a host does
+- [Self-test](dotnet/VirtualTerminalTest.cs): drives the classes the way a host does
 - [C interface](native/isoshim.h): for hosts not in .NET
 
 ## Optional

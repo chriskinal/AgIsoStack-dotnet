@@ -1,4 +1,4 @@
-// Self-test of the C# class, VirtualTerminal: the host's view. Its frames are looped to the test
+// Self-test of the C# classes, VirtualTerminalStack and VirtualTerminal: the host's view. Its frames are looped to the test
 // implement on channel 1 (upstream's VT client, inside the native library), as in IsoShimSpike.
 using System;
 using System.Collections.Concurrent;
@@ -38,7 +38,7 @@ public static class VirtualTerminalTest
 
     static async Task<bool> RunAsync(Action<string> log)
     {
-        log("--- the C# class, VirtualTerminal");
+        log("--- the C# classes, VirtualTerminalStack and VirtualTerminal");
         int failures = 0;
         void Check(string what, bool pass)
         {
@@ -59,8 +59,7 @@ public static class VirtualTerminalTest
             ulong? active = null;
             int address = -1, loaded = -1;
             bool inlineCall = false, failed = false;
-            VirtualTerminal? vt = null;
-            vt = new VirtualTerminal(new VirtualTerminalOptions
+            var stack = new VirtualTerminalStack(new VirtualTerminalOptions
             {
                 Store = store,
                 Send = (channel, id, data, extended) =>
@@ -69,6 +68,7 @@ public static class VirtualTerminalTest
                     unsafe { fixed (byte* p = data) IsoShim.isoshim_receive(1 - channel, id, p, data.Length, extended ? 1 : 0); }
                 },
             });
+            var vt = stack.Terminals[0];
             vt.Message += json =>
             {
                 threads[Environment.CurrentManagedThreadId] = true;
@@ -81,18 +81,18 @@ public static class VirtualTerminalTest
                 active = a;
                 sets = list;
                 // A call from inside a handler runs at once, on this thread.
-                inlineCall |= vt!.InvokeAsync(() => true).IsCompleted;
+                inlineCall |= vt.InvokeAsync(() => true).IsCompleted;
             };
             vt.AddressClaimed += a => address = a;
             vt.PoolLoaded += (_, objects) => loaded = objects;
-            vt.HandlerFailed += e => { failed = true; log($"  handler threw: {e.Message}"); };
+            stack.HandlerFailed += e => { failed = true; log($"  handler threw: {e.Message}"); };
 
-            vt.Start();
+            stack.Start();
             bool second = false;
-            try { new VirtualTerminal(new VirtualTerminalOptions { Send = (_, _, _, _) => { } }).Start(); }
+            try { new VirtualTerminalStack(new VirtualTerminalOptions { Send = (_, _, _, _) => { } }).Start(); }
             catch (InvalidOperationException) { second = true; }
-            Check("a second terminal in the process is refused", second);
-            await vt.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(p, pool.Length); } });
+            Check("a second stack in the process is refused", second);
+            await vt.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(0, p, pool.Length); } });
 
             async Task<bool> Until(Func<bool> done, int ms = 15000)
             {
@@ -122,10 +122,10 @@ public static class VirtualTerminalTest
             {
                 // Stop asked on the terminal's own thread (as when code resumes there after
                 // awaiting something a handler completed): it stops after that step.
-                await vt.InvokeAsync(() => { vt.Stop(); return 0; });
+                await vt.InvokeAsync(() => { stack.Stop(); return 0; });
                 Check("stop asked from the terminal's thread: stopped", await Until(() => !vt.IsRunning, 5000));
             }
-            vt.Stop();
+            stack.Stop();
             Check("stopped", !vt.IsRunning && vt.Address == -1);
             bool refused = false;
             try { await vt.SoftKeyAsync(5000, KeyState.Pressed); }
@@ -136,9 +136,55 @@ public static class VirtualTerminalTest
             Check("no handler threw", !failed);
         }
 
+        // Two terminals in one stack: each event reaches the terminal it concerns.
+        async Task TwoTerminals()
+        {
+            bool tooMany = false;
+            try { _ = new VirtualTerminalStack(new VirtualTerminalOptions { Send = (_, _, _, _) => { }, Count = 5 }); }
+            catch (ArgumentException) { tooMany = true; }
+            Check("five terminals: refused", tooMany);
+            var stack = new VirtualTerminalStack(new VirtualTerminalOptions
+            {
+                Count = 2,
+                Send = (channel, id, data, extended) =>
+                {
+                    unsafe { fixed (byte* p = data) IsoShim.isoshim_receive(1 - channel, id, p, data.Length, extended ? 1 : 0); }
+                },
+            });
+            Check("two terminals, at 0 and 1", stack.Terminals.Count == 2 && stack.Terminals[0].Index == 0 && stack.Terminals[1].Index == 1);
+            var sets = new IReadOnlyList<WorkingSetInfo>?[2];
+            var shown = new ulong?[2];
+            var screens = new[] { new ConcurrentQueue<string>(), new ConcurrentQueue<string>() };
+            foreach (var t in stack.Terminals)
+            {
+                int i = t.Index;
+                t.WorkingSetsChanged += (a, list) => { shown[i] = a; sets[i] = list; };
+                t.Message += json => { if (json.StartsWith("{\"type\":\"screen\"")) screens[i].Enqueue(json); };
+            }
+            stack.Start();
+            try
+            {
+                await stack.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(1, p, pool.Length); } });
+                var clock = Stopwatch.StartNew();
+                while (clock.ElapsedMilliseconds < 15000 && !(shown[1] != null && screens[1].Any(s => s.Contains("\"mask\":1000,"))))
+                    await Task.Delay(5);
+                Check("an implement for the second: shown there", shown[1] != null && screens[1].Any(s => s.Contains("\"mask\":1000,")));
+                Check("and not on the first", shown[0] == null && sets[0]?.Count is null or 0);
+                Check($"addresses 0x{stack.Terminals[0].Address:X2} and 0x{stack.Terminals[1].Address:X2}",
+                    stack.Terminals[0].Address == 0x26 && stack.Terminals[1].Address == 0x27);
+                Check("Rate 80 on the second: Entered; on the first: NotAnInput",
+                    await stack.Terminals[1].SetNumberAsync(9000, 80) == InputResult.Entered
+                    && await stack.Terminals[0].SetNumberAsync(9000, 80) == InputResult.NotAnInput);
+                Check("the first can't show the second's implement", !await stack.Terminals[0].ActivateAsync(shown[1]!.Value));
+            }
+            finally { stack.Stop(); }
+            Check("stopped: both", !stack.IsRunning && stack.Terminals.All(t => t.Address == -1));
+        }
+
         await Session(fromStore: false);
         await Session(fromStore: true);
-        log(failures == 0 ? "PASS: the C# class" : $"FAIL: the C# class, {failures} checks failed");
+        await TwoTerminals();
+        log(failures == 0 ? "PASS: the C# classes" : $"FAIL: the C# classes, {failures} checks failed");
         return failures == 0;
     }
 }

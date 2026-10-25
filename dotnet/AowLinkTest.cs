@@ -1,4 +1,4 @@
-// Self-test of the gateway link: AowLink attached to VirtualTerminal, against a scripted gateway on
+// Self-test of the gateway link: AowLink attached to VirtualTerminalStack, against a scripted gateway on
 // loopback whose bus is the self-test's implement (channel 1, upstream's VT client in the native
 // library). Checks the hello, frames both ways, the round trip, a gateway gone silent, refusals
 // while busy, reconnecting, and that a soft key held when the link went is aborted when it is back.
@@ -227,7 +227,7 @@ public static class AowLinkTest
         ulong? active = null;
         IReadOnlyList<WorkingSetInfo>? sets = null;
         var screens = new ConcurrentQueue<string>();
-        var vt = new VirtualTerminal(new VirtualTerminalOptions
+        var stack = new VirtualTerminalStack(new VirtualTerminalOptions
         {
             PacketsPerCts = 255,
             // Channel 0 is the terminal's, to the gateway; channel 1 is the implement's, the gateway's bus.
@@ -237,10 +237,11 @@ public static class AowLinkTest
                 else gateway.ToClient(id, data, extended);
             },
         });
+        var vt = stack.Terminals[0];
         vt.WorkingSetsChanged += (a, list) => { active = a; sets = list; };
         vt.Message += json => { if (json.StartsWith("{\"type\":\"screen\"")) screens.Enqueue(json); };
-        vt.Attach(link);
-        vt.Start();
+        stack.Attach(link);
+        stack.Start();
         try
         {
             link.Start();
@@ -253,7 +254,7 @@ public static class AowLinkTest
             Check("round trips measured", await Until(() => rtts.Count >= 3, 2000));
 
             byte[] pool = Pool("VT3TestPool.iop");
-            await vt.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(p, pool.Length); } });
+            await vt.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(0, p, pool.Length); } });
             bool ready = await Until(() => sets?.Any(s => s.State == PoolState.Ready) == true, 20000);
             Check($"the implement's pool came over the link ({gateway.FromClient.Count} frames to the bus)", ready);
             if (ready)
@@ -289,7 +290,7 @@ public static class AowLinkTest
         finally
         {
             link.Stop();
-            vt.Stop();
+            stack.Stop();
         }
         Check("stopped: link down, terminal stopped", !link.IsConnected && !vt.IsRunning);
         log(failures == 0 ? "PASS: the gateway link" : $"FAIL: the gateway link, {failures} checks failed");

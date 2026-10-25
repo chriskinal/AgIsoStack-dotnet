@@ -28,7 +28,6 @@
 namespace {
 
 isoshim_host g_host{};
-isoshim_vt_config g_config{};
 isoshim_log_fn g_logFn = nullptr;
 int g_channels = 0;
 
@@ -53,7 +52,7 @@ void flushTransmit() {
 	}
 }
 
-void message(const std::string &json) { g_host.message(json.c_str(), static_cast<int32_t>(json.size())); }
+void message(std::int32_t terminal, const std::string &json) { g_host.message(terminal, json.c_str(), static_cast<int32_t>(json.size())); }
 
 class Logger : public isobus::CANStackLogger {
 public:
@@ -86,11 +85,14 @@ std::shared_ptr<isobus::WorkingSet> workingSetObject(const std::shared_ptr<Worki
 	return std::static_pointer_cast<isobus::WorkingSet>(object);
 }
 
-// The terminal: the server's questions answered from the config and the host's storage, and its
-// state reported to the host.
+// One terminal: the server's questions answered from its config and the host's storage, and its
+// state reported to the host under its position (index).
 class Terminal : public isobus::VirtualTerminalServer {
 public:
-	explicit Terminal(std::shared_ptr<isobus::InternalControlFunction> cf) : VirtualTerminalServer(std::move(cf)) {
+	Terminal(std::shared_ptr<isobus::InternalControlFunction> cf, std::int32_t index, const isoshim_vt_config &config)
+	    : VirtualTerminalServer(std::move(cf)), index_(index), config_(config) {
+		if (g_host.image)
+			image_ = [index](std::uint32_t id, std::int32_t w, std::int32_t h, const std::uint8_t *rgba) { g_host.image(index, id, w, h, rgba); };
 		repaintHandle_ = get_on_repaint_event_dispatcher().add_listener([this](std::shared_ptr<WorkingSet> ws) {
 			if (ws == activeWorkingSet) dirty_ = true;
 		});
@@ -110,35 +112,43 @@ public:
 	// A pool can still be parsing on its own thread: the working set joins it when destroyed
 	// (AgIsoStack++ #805, fixing #802).
 	~Terminal() {
-		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(
-		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), onImplementMessage, this);
+		const auto pgn = static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal);
+		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(pgn, onImplementMessage, this);
+		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(pgn, onAddressed, this);
 	}
 
-	// After the base class's own initialize: a second listener on the implements' messages, for the
-	// ones upstream acknowledges and drops (audio, gap 5) or does not handle (ESC, gap 8).
+	// After the base class's own initialize. Upstream's server takes every implement message sent
+	// to any of the process's own control functions, so with two terminals each would also answer
+	// the other's implements (and take them on): it hears only its own, and those sent to everyone
+	// (gap 11). Then a second listener for the ones upstream acknowledges and drops (audio, gap 5)
+	// or does not handle (ESC, gap 8; Identify VT from an implement not connected, gap 12).
 	void listen() {
-		isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
-		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), onImplementMessage, this);
+		const auto pgn = static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal);
+		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(pgn, process_rx_message, this);
+		isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(pgn, onAddressed, this);
+		isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(pgn, onImplementMessage, this);
 	}
+
+	std::shared_ptr<isobus::InternalControlFunction> controlFunction() const { return serverInternalControlFunction; }
 
 	bool get_is_enough_memory(std::uint32_t) const override { return true; }
 	VTVersion get_version() const override {
-		switch (g_config.version) {
+		switch (config_.version) {
 			case 3: return VTVersion::Version3;
 			case 4: return VTVersion::Version4;
 			case 6: return VTVersion::Version6;
 			default: return VTVersion::Version5;
 		}
 	}
-	std::uint8_t get_number_of_navigation_soft_keys() const override { return g_config.navigation_keys; }
-	std::uint8_t get_soft_key_descriptor_x_pixel_width() const override { return g_config.key_width; }
-	std::uint8_t get_soft_key_descriptor_y_pixel_height() const override { return g_config.key_height; }
-	std::uint8_t get_number_of_possible_virtual_soft_keys_in_soft_key_mask() const override { return g_config.virtual_keys; }
-	std::uint8_t get_number_of_physical_soft_keys() const override { return g_config.physical_keys; }
-	std::uint16_t get_data_mask_area_size_x_pixels() const override { return g_config.mask_width; }
-	std::uint16_t get_data_mask_area_size_y_pixels() const override { return g_config.mask_height; }
-	std::uint8_t get_supported_small_fonts_bitfield() const override { return g_config.small_fonts; }
-	std::uint8_t get_supported_large_fonts_bitfield() const override { return g_config.large_fonts; }
+	std::uint8_t get_number_of_navigation_soft_keys() const override { return config_.navigation_keys; }
+	std::uint8_t get_soft_key_descriptor_x_pixel_width() const override { return config_.key_width; }
+	std::uint8_t get_soft_key_descriptor_y_pixel_height() const override { return config_.key_height; }
+	std::uint8_t get_number_of_possible_virtual_soft_keys_in_soft_key_mask() const override { return config_.virtual_keys; }
+	std::uint8_t get_number_of_physical_soft_keys() const override { return config_.physical_keys; }
+	std::uint16_t get_data_mask_area_size_x_pixels() const override { return config_.mask_width; }
+	std::uint16_t get_data_mask_area_size_y_pixels() const override { return config_.mask_height; }
+	std::uint8_t get_supported_small_fonts_bitfield() const override { return config_.small_fonts; }
+	std::uint8_t get_supported_large_fonts_bitfield() const override { return config_.large_fonts; }
 	void suspend_working_set(std::shared_ptr<WorkingSet>) override {}
 	SupportedWideCharsErrorCode get_supported_wide_chars(std::uint8_t, std::uint16_t, std::uint16_t, std::uint8_t &ranges,
 	                                                     std::vector<std::uint8_t> &) override {
@@ -190,9 +200,9 @@ public:
 	void object_pool_parse_finished(std::shared_ptr<WorkingSet> ws, bool success) override {
 		listChanged_ = true;
 		if (success)
-			g_host.event(ISOSHIM_POOL_OK, static_cast<int32_t>(ws->get_object_tree().size()), addressOf(ws));
+			g_host.event(index_, ISOSHIM_POOL_OK, static_cast<int32_t>(ws->get_object_tree().size()), addressOf(ws));
 		else
-			g_host.event(ISOSHIM_POOL_BAD, ws->get_object_pool_faulting_object_id(), addressOf(ws));
+			g_host.event(index_, ISOSHIM_POOL_BAD, ws->get_object_pool_faulting_object_id(), addressOf(ws));
 	}
 
 	void handle_unexpected_working_set_shutdown(std::shared_ptr<WorkingSet> ws, UnexpectedShutdownReason reason) override {
@@ -202,7 +212,7 @@ public:
 			openWs_ = nullptr;
 			openId_ = isobus::NULL_OBJECT_ID;
 		}
-		g_host.event(ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
+		g_host.event(index_, ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
 	}
 
 	void step() {
@@ -213,7 +223,7 @@ public:
 			const bool running = ws->get_object_pool_processing_state() == State::Running;
 			if (running && parsing_.insert(ws.get()).second) {
 				listChanged_ = true;
-				g_host.event(ISOSHIM_PARSE_START, 0, addressOf(ws));
+				g_host.event(index_, ISOSHIM_PARSE_START, 0, addressOf(ws));
 			}
 			if (!running) parsing_.erase(ws.get());
 		}
@@ -409,6 +419,16 @@ public:
 	}
 
 private:
+	void message(const std::string &json) const { ::message(index_, json); }
+
+	static void onAddressed(const isobus::CANMessage &m, void *parent) {
+		auto *self = static_cast<Terminal *>(parent);
+		const auto to = m.get_destination_control_function();
+		if (to != nullptr && to != self->serverInternalControlFunction) return;
+		if (m.get_data_length() > 0 && m.get_uint8_at(0) == static_cast<std::uint8_t>(Function::IdentifyVTMessage)) return; // ours
+		process_rx_message(m, self);
+	}
+
 	// Every implement showing an alarm mask, shown or not: {"type":"alarms","list":[{ws, address,
 	// mask, priority (0 high, 1 medium, 2 low), signal (0 highest .. 3 none)}]}, sent on change.
 	void reportAlarms() {
@@ -433,7 +453,16 @@ private:
 	static void onImplementMessage(const isobus::CANMessage &m, void *parent) {
 		auto *self = static_cast<Terminal *>(parent);
 		const auto &data = m.get_data();
-		if (data.size() < 8 || m.get_destination_control_function() != self->serverInternalControlFunction) return;
+		if (data.size() < 8) return;
+		const auto to = m.get_destination_control_function();
+		// Identify VT, from any implement, connected or not, to this terminal or to every one: the
+		// host shows the terminal's number for about 3 s (so the operator can pick a terminal in
+		// the implement's own settings). Upstream takes it only from a connected implement.
+		if (data[0] == static_cast<std::uint8_t>(Function::IdentifyVTMessage) && (to == nullptr || to == self->serverInternalControlFunction)) {
+			self->message("{\"type\":\"identify\"}");
+			return;
+		}
+		if (to != self->serverInternalControlFunction) return;
 		std::shared_ptr<WorkingSet> ws;
 		for (const auto &candidate : self->managedWorkingSetList)
 			if (candidate->get_control_function() == m.get_source_control_function()) ws = candidate;
@@ -445,12 +474,12 @@ private:
 				json.begin_object().key("type").value("audio").key("ws").value(isoshim::hexName(nameOf(ws)));
 				json.key("activations").value(static_cast<int>(data[1])).key("frequency").value(static_cast<int>(m.get_uint16_at(2)));
 				json.key("on").value(static_cast<int>(m.get_uint16_at(4))).key("off").value(static_cast<int>(m.get_uint16_at(6))).end_object();
-				message(json.str());
+				self->message(json.str());
 				break;
 			case static_cast<std::uint8_t>(Function::SetAudioVolumeCommand):
 				json.begin_object().key("type").value("volume").key("ws").value(isoshim::hexName(nameOf(ws)));
 				json.key("percent").value(static_cast<int>(data[1])).end_object();
-				message(json.str());
+				self->message(json.str());
 				break;
 			case static_cast<std::uint8_t>(Function::ESCCommand): self->escCommand(ws); break;
 			default: break;
@@ -513,7 +542,7 @@ private:
 		openId_ = id;
 		openWs_ = id == isobus::NULL_OBJECT_ID ? nullptr : ws;
 		if (id != isobus::NULL_OBJECT_ID || wasOpen)
-			message(renderer_.edit(*ws, nameOf(ws), id, g_host.image));
+			message(renderer_.edit(*ws, nameOf(ws), id, image_));
 	}
 
 	template<std::size_t N>
@@ -560,9 +589,9 @@ private:
 		if (openId_ != isobus::NULL_OBJECT_ID && (address != shownAddress_ || mask != shownMask_)) escape(); // the field has gone
 		if (address != shownAddress_) {
 			listChanged_ = true;
-			g_host.event(ISOSHIM_ACTIVE, address, 0);
+			g_host.event(index_, ISOSHIM_ACTIVE, address, 0);
 		}
-		if (address != shownAddress_ || mask != shownMask_) g_host.event(ISOSHIM_MASK, mask, address);
+		if (address != shownAddress_ || mask != shownMask_) g_host.event(index_, ISOSHIM_MASK, mask, address);
 		shownAddress_ = address;
 		shownMask_ = mask;
 		shownKeys_ = keys;
@@ -621,9 +650,9 @@ private:
 	void drawScreen() {
 		std::string screen;
 		if (workingSetObject(activeWorkingSet)) {
-			screen = renderer_.screen(*activeWorkingSet, nameOf(activeWorkingSet), g_config.mask_width, g_config.mask_height,
-			                          g_config.key_width, g_config.key_height, activeWorkingSet->get_object_focus(),
-			                          openId_ != isobus::NULL_OBJECT_ID && openWs_ == activeWorkingSet, g_host.image);
+			screen = renderer_.screen(*activeWorkingSet, nameOf(activeWorkingSet), config_.mask_width, config_.mask_height,
+			                          config_.key_width, config_.key_height, activeWorkingSet->get_object_focus(),
+			                          openId_ != isobus::NULL_OBJECT_ID && openWs_ == activeWorkingSet, image_);
 		} else {
 			screen = "{\"type\":\"screen\",\"ws\":null}";
 		}
@@ -632,6 +661,9 @@ private:
 		message(screen);
 	}
 
+	const std::int32_t index_;
+	const isoshim_vt_config config_;
+	isoshim::ImageSink image_;
 	std::set<const WorkingSet *> parsing_;
 	std::map<const WorkingSet *, int> progress_;
 	std::size_t reportedCount_ = 0;
@@ -648,22 +680,43 @@ private:
 	isobus::EventCallbackHandle repaintHandle_, maskHandle_, keyMaskHandle_, focusHandle_;
 };
 
-std::shared_ptr<isobus::InternalControlFunction> g_serverCf, g_clientCf;
-std::unique_ptr<Terminal> g_terminal;
-std::shared_ptr<isobus::VirtualTerminalClient> g_client;
-std::shared_ptr<isobus::PartneredControlFunction> g_partner;
-std::vector<std::uint8_t> g_pool;
-bool g_serverReported = false, g_clientReported = false;
+// The terminals, in the host's order, each with its control function.
+struct Server {
+	std::shared_ptr<isobus::InternalControlFunction> cf;
+	std::unique_ptr<Terminal> terminal;
+	bool reported = false;
+};
+std::vector<Server> g_servers;
 
-// Self-test: the terminal's answer to the test implement's ESC command, which upstream's client
-// does not report.
-void heardEscResponse(const isobus::CANMessage &m, void *) {
+// Self-test: upstream's VT client, each partnered to one terminal.
+struct TestImplement {
+	std::int32_t terminal;
+	std::shared_ptr<isobus::InternalControlFunction> cf;
+	std::shared_ptr<isobus::PartneredControlFunction> partner;
+	std::shared_ptr<isobus::VirtualTerminalClient> client;
+	std::vector<std::uint8_t> pool;
+	bool reported = false;
+};
+std::vector<std::unique_ptr<TestImplement>> g_implements;
+
+Terminal *terminalAt(std::int32_t index) {
+	return index >= 0 && index < static_cast<std::int32_t>(g_servers.size()) ? g_servers[index].terminal.get() : nullptr;
+}
+
+TestImplement *implementAt(std::int32_t index) {
+	return index >= 0 && index < static_cast<std::int32_t>(g_implements.size()) ? g_implements[index].get() : nullptr;
+}
+
+// Self-test: a terminal's answer to a test implement's ESC command, which upstream's client does
+// not report.
+void heardEscResponse(const isobus::CANMessage &m, void *parent) {
+	const auto *implement = static_cast<const TestImplement *>(parent);
 	const auto &data = m.get_data();
-	if (data.size() < 4 || data[0] != 0x92 || m.get_destination_control_function() != g_clientCf) return;
+	if (data.size() < 4 || data[0] != 0x92 || m.get_destination_control_function() != implement->cf) return;
 	isoshim::Json json;
 	json.begin_object().key("type").value("implement").key("event").value("escResponse");
 	json.key("o").value(static_cast<int>(m.get_uint16_at(1))).key("error").value(static_cast<int>(data[3])).end_object();
-	message(json.str());
+	message(implement->terminal, json.str());
 }
 
 isobus::NAME makeName(isobus::NAME::Function function, std::uint32_t identity, std::uint16_t manufacturer, std::uint8_t instance) {
@@ -695,116 +748,138 @@ bool send_can_message_frame_to_hardware(const CANMessageFrame &frame) {
 
 extern "C" {
 
-int32_t isoshim_version(void) { return 5; }
+int32_t isoshim_version(void) { return 6; }
 
-int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host) {
-	if (!config || !host || !host->send || !host->event || !host->message) return -1;
-	if (g_terminal) return -2;
+int32_t isoshim_vt_start(const isoshim_vt_config *configs, int32_t count, const isoshim_host *host) {
+	if (!configs || count < 1 || count > ISOSHIM_MAX_TERMINALS || !host || !host->send || !host->event || !host->message) return -1;
+	if (!g_servers.empty()) return -2;
+	std::vector<isoshim_vt_config> config(configs, configs + count);
+	std::set<std::uint64_t> names;
+	for (std::int32_t i = 0; i < count; ++i) {
+		auto &c = config[i];
+		orDefault<std::uint32_t>(c.identity, 3);
+		orDefault<std::uint16_t>(c.manufacturer, 1407);
+		orDefault<std::uint16_t>(c.mask_width, 480);
+		orDefault<std::uint16_t>(c.mask_height, 480);
+		orDefault<std::uint8_t>(c.preferred_address, static_cast<std::uint8_t>(0x26 + i));
+		orDefault<std::uint8_t>(c.key_width, 80);
+		orDefault<std::uint8_t>(c.key_height, 80);
+		orDefault<std::uint8_t>(c.physical_keys, 6);
+		orDefault<std::uint8_t>(c.virtual_keys, 64);
+		orDefault<std::uint8_t>(c.version, 5);
+		orDefault<std::uint8_t>(c.small_fonts, 0xFF);
+		orDefault<std::uint8_t>(c.large_fonts, 0xFF);
+		orDefault<std::uint8_t>(c.packets_per_cts, 255);
+		const auto name = makeName(isobus::NAME::Function::VirtualTerminal, c.identity, c.manufacturer, c.function_instance);
+		if (!names.insert(name.get_full_name()).second) return -1; // two terminals with one NAME
+	}
 	g_host = *host;
-	g_config = *config;
-	orDefault<std::uint32_t>(g_config.identity, 3);
-	orDefault<std::uint16_t>(g_config.manufacturer, 1407);
-	orDefault<std::uint16_t>(g_config.mask_width, 480);
-	orDefault<std::uint16_t>(g_config.mask_height, 480);
-	orDefault<std::uint8_t>(g_config.preferred_address, 0x26);
-	orDefault<std::uint8_t>(g_config.key_width, 80);
-	orDefault<std::uint8_t>(g_config.key_height, 80);
-	orDefault<std::uint8_t>(g_config.physical_keys, 6);
-	orDefault<std::uint8_t>(g_config.virtual_keys, 64);
-	orDefault<std::uint8_t>(g_config.version, 5);
-	orDefault<std::uint8_t>(g_config.small_fonts, 0xFF);
-	orDefault<std::uint8_t>(g_config.large_fonts, 0xFF);
-	orDefault<std::uint8_t>(g_config.packets_per_cts, 255);
 
 	auto &network = isobus::CANNetworkManager::CANNetwork.get_configuration();
-	network.set_number_of_packets_per_cts_message(g_config.packets_per_cts);
-	network.set_number_of_packets_per_dpo_message(g_config.packets_per_cts);
+	network.set_number_of_packets_per_cts_message(config[0].packets_per_cts);
+	network.set_number_of_packets_per_dpo_message(config[0].packets_per_cts);
 	if (std::getenv("ISOSHIM_LOG")) {
 		isobus::CANStackLogger::set_can_stack_logger_sink(&g_logger);
 		isobus::CANStackLogger::set_log_level(isobus::CANStackLogger::LoggingLevel::Info);
 	}
 	g_channels = 1;
-	g_serverCf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
-	  makeName(isobus::NAME::Function::VirtualTerminal, g_config.identity, g_config.manufacturer, g_config.function_instance), 0,
-	  g_config.preferred_address);
-	g_terminal.reset(new Terminal(g_serverCf));
-	g_terminal->initialize();
-	g_terminal->listen();
+	for (std::int32_t i = 0; i < count; ++i) {
+		const auto &c = config[i];
+		Server server;
+		server.cf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
+		  makeName(isobus::NAME::Function::VirtualTerminal, c.identity, c.manufacturer, c.function_instance), 0, c.preferred_address);
+		server.terminal.reset(new Terminal(server.cf, i, c));
+		server.terminal->initialize();
+		server.terminal->listen();
+		g_servers.push_back(std::move(server));
+	}
 	return 0;
 }
 
-int32_t isoshim_test_implement(const uint8_t *pool, int32_t poolLen) {
-	if (!g_terminal || g_client || !pool || poolLen <= 0) return -1;
-	g_pool.assign(pool, pool + poolLen);
+int32_t isoshim_test_implement(int32_t terminal, const uint8_t *pool, int32_t poolLen) {
+	if (!terminalAt(terminal) || !pool || poolLen <= 0) return -1;
+	const auto index = static_cast<std::int32_t>(g_implements.size());
+	auto implement = std::make_unique<TestImplement>();
+	auto *self = implement.get();
+	self->terminal = terminal;
+	self->pool.assign(pool, pool + poolLen);
 	g_channels = 2;
-	g_clientCf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
-	  makeName(isobus::NAME::Function::SteeringControl, 2, 1407, 0), 1);
+	self->cf = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
+	  makeName(isobus::NAME::Function::SteeringControl, static_cast<std::uint32_t>(2 + index), 1407, 0), 1);
+	// Its terminal: a VT with that terminal's function instance.
+	const auto vtName = g_servers[terminal].cf->get_NAME();
 	const isobus::NAMEFilter vt(isobus::NAME::NAMEParameters::FunctionCode,
 	                            static_cast<std::uint8_t>(isobus::NAME::Function::VirtualTerminal));
-	g_partner = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(1, { vt });
-	g_client = std::make_shared<isobus::VirtualTerminalClient>(g_partner, g_clientCf);
-	g_client->set_object_pool(0, g_pool.data(), static_cast<std::uint32_t>(g_pool.size()),
-	                          isobus::IOPFileInterface::hash_object_pool_to_version(g_pool));
+	const isobus::NAMEFilter instance(isobus::NAME::NAMEParameters::FunctionInstance, vtName.get_function_instance());
+	self->partner = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(1, { vt, instance });
+	self->client = std::make_shared<isobus::VirtualTerminalClient>(self->partner, self->cf);
+	self->client->set_object_pool(0, self->pool.data(), static_cast<std::uint32_t>(self->pool.size()),
+	                              isobus::IOPFileInterface::hash_object_pool_to_version(self->pool));
 	// The example's behaviour: the alarm soft key (5000) shows the alarm mask (2000).
-	g_client->get_vt_soft_key_event_dispatcher().add_listener([](const isobus::VirtualTerminalClient::VTKeyEvent &e) {
+	self->client->get_vt_soft_key_event_dispatcher().add_listener([self](const isobus::VirtualTerminalClient::VTKeyEvent &e) {
 		if (e.keyEvent == isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased && e.objectID == 5000)
-			g_client->send_change_active_mask(0, 2000);
+			self->client->send_change_active_mask(0, 2000);
 	});
-	// What the implement hears of the operator's input, for the self-test to check:
-	// {"type":"implement","event":"select"|"esc"|"number"|"string","o":id,...}
+	// What the implement hears of the operator's input, for the self-test to check, under its
+	// terminal: {"type":"implement","event":"select"|"esc"|"number"|"string","o":id,...}
 	const auto heard = [](const char *event, std::uint16_t id) {
 		auto json = std::make_shared<isoshim::Json>();
 		json->begin_object().key("type").value("implement").key("event").value(event).key("o").value(static_cast<int>(id));
 		return json;
 	};
-	g_client->get_vt_select_input_object_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTSelectInputObjectEvent &e) {
+	self->client->get_vt_select_input_object_event_dispatcher().add_listener([heard, terminal](const isobus::VirtualTerminalClient::VTSelectInputObjectEvent &e) {
 		auto json = heard("select", e.objectID);
 		json->key("selected").value(e.objectSelected).key("open").value(e.objectOpenForInput).end_object();
-		message(json->str());
+		message(terminal, json->str());
 	});
-	g_client->get_vt_esc_message_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTESCMessageEvent &e) {
+	self->client->get_vt_esc_message_event_dispatcher().add_listener([heard, terminal](const isobus::VirtualTerminalClient::VTESCMessageEvent &e) {
 		auto json = heard("esc", e.objectID);
 		json->end_object();
-		message(json->str());
+		message(terminal, json->str());
 	});
-	g_client->get_vt_change_numeric_value_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTChangeNumericValueEvent &e) {
+	self->client->get_vt_change_numeric_value_event_dispatcher().add_listener([heard, terminal](const isobus::VirtualTerminalClient::VTChangeNumericValueEvent &e) {
 		auto json = heard("number", e.objectID);
 		json->key("value").value(static_cast<double>(e.value)).end_object();
-		message(json->str());
+		message(terminal, json->str());
 	});
-	g_client->get_vt_change_string_value_event_dispatcher().add_listener([heard](const isobus::VirtualTerminalClient::VTChangeStringValueEvent &e) {
+	self->client->get_vt_change_string_value_event_dispatcher().add_listener([heard, terminal](const isobus::VirtualTerminalClient::VTChangeStringValueEvent &e) {
 		auto json = heard("string", e.objectID);
 		json->key("value").value(isoshim::utf8(e.value)).end_object();
-		message(json->str());
+		message(terminal, json->str());
 	});
 	isobus::CANNetworkManager::CANNetwork.add_any_control_function_parameter_group_number_callback(
-	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, nullptr);
-	g_client->initialize(false); // updated from isoshim_step, not its own thread
-	return 0;
+	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, self);
+	self->client->initialize(false); // updated from isoshim_step, not its own thread
+	g_implements.push_back(std::move(implement));
+	return index;
 }
 
-int32_t isoshim_test_masks(uint16_t *ids, int32_t max) {
-	if (!g_terminal || !ids || max < 0) return -1;
+int32_t isoshim_test_masks(int32_t terminal, uint16_t *ids, int32_t max) {
+	const auto t = terminalAt(terminal);
+	if (!t || !ids || max < 0) return -1;
 	std::uint16_t workingSet = 0;
-	const auto masks = g_terminal->masks(workingSet);
+	const auto masks = t->masks(workingSet);
 	for (std::size_t i = 0; i < masks.size() && i < static_cast<std::size_t>(max); ++i) ids[i] = masks[i];
 	return static_cast<int32_t>(masks.size());
 }
 
-int32_t isoshim_test_show(uint16_t mask) {
-	if (!g_terminal || !g_client) return 0;
+int32_t isoshim_test_show(int32_t implement, uint16_t mask) {
+	const auto self = implementAt(implement);
+	if (!self) return 0;
 	std::uint16_t workingSet = isobus::NULL_OBJECT_ID;
-	g_terminal->masks(workingSet);
+	terminalAt(self->terminal)->masks(workingSet);
 	if (workingSet == isobus::NULL_OBJECT_ID) return 0;
-	const bool sent = g_client->send_change_active_mask(workingSet, mask);
+	const bool sent = self->client->send_change_active_mask(workingSet, mask);
 	flushTransmit();
 	return sent ? 1 : 0;
 }
 
-int32_t isoshim_test_send(const uint8_t *data, int32_t len) {
-	if (!g_client || !g_clientCf || !g_partner || !data || len != 8) return 0;
+int32_t isoshim_test_send(int32_t implement, const uint8_t *data, int32_t len, int32_t global) {
+	const auto self = implementAt(implement);
+	if (!self || !data || len != 8) return 0;
 	const bool sent = isobus::CANNetworkManager::CANNetwork.send_can_message(
-	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), data, 8, g_clientCf, g_partner);
+	  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), data, 8, self->cf,
+	  global ? nullptr : self->partner);
 	flushTransmit();
 	return sent ? 1 : 0;
 }
@@ -829,7 +904,7 @@ void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t 
 }
 
 void isoshim_step(void) {
-	if (!g_terminal) return;
+	if (g_servers.empty()) return;
 	std::deque<isobus::CANMessageFrame> in;
 	{
 		std::lock_guard<std::mutex> lock(g_rxMutex);
@@ -839,17 +914,23 @@ void isoshim_step(void) {
 		if (frame.channel < g_channels) isobus::receive_can_message_frame_from_hardware(frame);
 
 	isobus::periodic_update_from_hardware(); // the network manager: transport protocols, address claim
-	if (g_client) g_client->update();
-	g_terminal->step();
+	for (const auto &implement : g_implements) implement->client->update();
+	for (const auto &server : g_servers) server.terminal->step();
 	flushTransmit();
 
-	if (!g_serverReported && g_serverCf->get_address_valid()) {
-		g_serverReported = true;
-		g_host.event(ISOSHIM_SERVER_ADDRESS, g_serverCf->get_address(), 0);
+	for (std::size_t i = 0; i < g_servers.size(); ++i) {
+		auto &server = g_servers[i];
+		if (!server.reported && server.cf->get_address_valid()) {
+			server.reported = true;
+			g_host.event(static_cast<std::int32_t>(i), ISOSHIM_SERVER_ADDRESS, server.cf->get_address(), 0);
+		}
 	}
-	if (!g_clientReported && g_clientCf && g_clientCf->get_address_valid()) {
-		g_clientReported = true;
-		g_host.event(ISOSHIM_CLIENT_ADDRESS, g_clientCf->get_address(), 0);
+	for (std::size_t i = 0; i < g_implements.size(); ++i) {
+		auto &implement = *g_implements[i];
+		if (!implement.reported && implement.cf->get_address_valid()) {
+			implement.reported = true;
+			g_host.event(implement.terminal, ISOSHIM_CLIENT_ADDRESS, implement.cf->get_address(), static_cast<std::int32_t>(i));
+		}
 	}
 }
 
@@ -857,58 +938,64 @@ void isoshim_reply(const uint8_t *data, int32_t len) {
 	if (data && len > 0) g_replies.emplace_back(data, data + len);
 }
 
-int32_t isoshim_soft_key(uint16_t objectId, int32_t state) {
-	if (!g_terminal || state < 0 || state > 3) return 0;
-	const bool sent = g_terminal->key(objectId, state, false);
+int32_t isoshim_soft_key(int32_t terminal, uint16_t objectId, int32_t state) {
+	const auto t = terminalAt(terminal);
+	if (!t || state < 0 || state > 3) return 0;
+	const bool sent = t->key(objectId, state, false);
 	flushTransmit();
 	return sent ? 1 : 0;
 }
 
-int32_t isoshim_button(uint16_t objectId, int32_t state) {
-	if (!g_terminal || state < 0 || state > 3) return 0;
-	const bool sent = g_terminal->key(objectId, state, true);
+int32_t isoshim_button(int32_t terminal, uint16_t objectId, int32_t state) {
+	const auto t = terminalAt(terminal);
+	if (!t || state < 0 || state > 3) return 0;
+	const bool sent = t->key(objectId, state, true);
 	flushTransmit();
 	return sent ? 1 : 0;
 }
 
-int32_t isoshim_select(uint16_t objectId, int32_t open) {
-	if (!g_terminal) return 0;
-	const bool done = g_terminal->select(objectId, open != 0);
+int32_t isoshim_select(int32_t terminal, uint16_t objectId, int32_t open) {
+	const auto t = terminalAt(terminal);
+	if (!t) return 0;
+	const bool done = t->select(objectId, open != 0);
 	flushTransmit();
 	return done ? 1 : 0;
 }
 
-int32_t isoshim_set_number(uint16_t objectId, uint32_t value) {
-	if (!g_terminal) return 0;
-	const int result = g_terminal->setNumber(objectId, value);
+int32_t isoshim_set_number(int32_t terminal, uint16_t objectId, uint32_t value) {
+	const auto t = terminalAt(terminal);
+	if (!t) return 0;
+	const int result = t->setNumber(objectId, value);
 	flushTransmit();
 	return result;
 }
 
-int32_t isoshim_set_string(uint16_t objectId, const char *utf8, int32_t len) {
-	if (!g_terminal || !utf8 || len < 0) return 0;
-	const int result = g_terminal->setString(objectId, std::string(utf8, static_cast<std::size_t>(len)));
+int32_t isoshim_set_string(int32_t terminal, uint16_t objectId, const char *utf8, int32_t len) {
+	const auto t = terminalAt(terminal);
+	if (!t || !utf8 || len < 0) return 0;
+	const int result = t->setString(objectId, std::string(utf8, static_cast<std::size_t>(len)));
 	flushTransmit();
 	return result;
 }
 
 int32_t isoshim_link_up(void) {
-	if (!g_terminal || !g_serverCf) return 0;
-	// Our own claim first: one sent while the link was down never reached the implements, which
-	// then ignore a terminal whose NAME they don't know at its address. (The stack sends it only
-	// when it claims, or on a request it hears; it never hears its own.)
+	if (g_servers.empty()) return 0;
+	// Each terminal's own claim first: one sent while the link was down never reached the
+	// implements, which then ignore a terminal whose NAME they don't know at its address. (The
+	// stack sends it only when it claims, or on a request it hears; it never hears its own.)
 	// Sent as the stack would (priority 6, PGN 0xEE00 to everyone), through the hardware hook.
 	bool sent = true;
-	if (g_serverCf->get_address_valid()) {
+	for (const auto &server : g_servers) {
+		if (!server.cf->get_address_valid()) continue;
 		isobus::CANMessageFrame frame{};
 		frame.channel = 0;
 		frame.identifier = (6u << 26) | (static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::AddressClaim) << 8) |
-		  (static_cast<std::uint32_t>(isobus::BROADCAST_CAN_ADDRESS) << 8) | g_serverCf->get_address();
+		  (static_cast<std::uint32_t>(isobus::BROADCAST_CAN_ADDRESS) << 8) | server.cf->get_address();
 		frame.isExtendedFrame = true;
 		frame.dataLength = 8;
-		const std::uint64_t name = g_serverCf->get_NAME().get_full_name();
+		const std::uint64_t name = server.cf->get_NAME().get_full_name();
 		for (std::size_t i = 0; i < 8; i++) frame.data[i] = static_cast<std::uint8_t>(name >> (8 * i));
-		sent = isobus::send_can_message_frame_to_hardware(frame);
+		sent = isobus::send_can_message_frame_to_hardware(frame) && sent;
 	}
 	// Then everyone else's: implements already on the bus whose claims we never heard.
 	sent = isobus::CANNetworkManager::CANNetwork.send_request_for_address_claim(0) && sent;
@@ -916,16 +1003,18 @@ int32_t isoshim_link_up(void) {
 	return sent ? 1 : 0;
 }
 
-int32_t isoshim_escape(void) {
-	if (!g_terminal) return 0;
-	const bool done = g_terminal->escape();
+int32_t isoshim_escape(int32_t terminal) {
+	const auto t = terminalAt(terminal);
+	if (!t) return 0;
+	const bool done = t->escape();
 	flushTransmit();
 	return done ? 1 : 0;
 }
 
-int32_t isoshim_activate(uint64_t name) {
-	if (!g_terminal) return 0;
-	const bool done = g_terminal->activate(name);
+int32_t isoshim_activate(int32_t terminal, uint64_t name) {
+	const auto t = terminalAt(terminal);
+	if (!t) return 0;
+	const bool done = t->activate(name);
 	flushTransmit();
 	return done ? 1 : 0;
 }
@@ -933,25 +1022,25 @@ int32_t isoshim_activate(uint64_t name) {
 // Everything goes while the network manager is still alive: left to the end of the process, these
 // objects would unregister from one that has already been destroyed.
 void isoshim_stop(void) {
-	if (g_client) {
-		g_client->terminate();
+	for (const auto &implement : g_implements) {
+		implement->client->terminate();
 		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(
-		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, nullptr);
+		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::VirtualTerminalToECU), heardEscResponse, implement.get());
+		implement->client.reset();
 	}
-	g_client.reset();
-	g_terminal.reset(); // joins any parsing thread
-	if (g_partner) isobus::CANNetworkManager::CANNetwork.deactivate_control_function(g_partner);
-	if (g_clientCf) isobus::CANNetworkManager::CANNetwork.deactivate_control_function(g_clientCf);
-	if (g_serverCf) isobus::CANNetworkManager::CANNetwork.deactivate_control_function(g_serverCf);
-	g_partner.reset();
-	g_clientCf.reset();
-	g_serverCf.reset();
+	for (auto &server : g_servers) server.terminal.reset(); // joins any parsing thread
+	for (const auto &implement : g_implements) {
+		isobus::CANNetworkManager::CANNetwork.deactivate_control_function(implement->partner);
+		isobus::CANNetworkManager::CANNetwork.deactivate_control_function(implement->cf);
+	}
+	for (const auto &server : g_servers) isobus::CANNetworkManager::CANNetwork.deactivate_control_function(server.cf);
+	g_implements.clear();
+	g_servers.clear();
 	g_tx.clear();
 	{
 		std::lock_guard<std::mutex> lock(g_rxMutex);
 		g_rx.clear();
 	}
-	g_serverReported = g_clientReported = false;
 	g_channels = 0;
 	g_host = {};
 }

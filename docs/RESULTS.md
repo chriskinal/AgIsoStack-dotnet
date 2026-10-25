@@ -147,6 +147,24 @@ pool store the terminal answered Store Version with an error, and upstream's VT 
 resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
 now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).
 
+## 2026-10-25: the HAT's gateway, `aow-linkd`
+
+AgOpenWeb-HAT's C++ gateway (0.2.24, its `docs/PLAN_VT.md` section 2) as a service on the CM4, in
+place of `aowlink_gateway.py`, home Wi-Fi, the Mac as the terminal. It passes `aowlink_check.py`
+on the CM4 and in a container, and reads the bus's 250 kbit/s from rtnetlink.
+
+| Implement | First request-to-send to pool parsed | Passed in | Heartbeat round trip p50 / p99 | Link | Frames from the bus / to it |
+|---|---|---|---|---|---|
+| 255 per DPO | 19.1 s | 20.3 s | 11 / 25 ms | up throughout | 24,439 / 314 |
+| 16 per DPO | 46.0 s | 47.2 s | 10 / 22 ms | up throughout | 26,921 / 1,594 |
+
+One upload attempt per implement (0x80, and `aow-hatd`'s own status screen from 0xF7, which found
+the terminal through the gateway on the shared `hatcan2`), no ETP aborts, no frames dropped either
+way. As the reference gateway's runs (255 per DPO, Mac: 18.4 s, and 17.9 s before the protocol).
+In a container (`bench/local.sh` with `GATEWAY=`): the same run in 8.7 s, and a 1.5 s cut
+mid-upload dropped the link after 1 s of silence, remade it 1.0 s later, and the upload was
+redone and passed, as with the reference gateway.
+
 ## 2026-10-24: the AOW link protocol (version 1) on the bench
 
 The terminal through `AowLink` (attached to `VirtualTerminal`) and the reference gateway

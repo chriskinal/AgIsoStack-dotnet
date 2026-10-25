@@ -226,13 +226,15 @@ point. A pairing key in HELLO is open (section 7) before a gateway joins a share
 
 - **The client**: `AowLink` in the package (docs/API.md), with `vt.Attach(link)` for a terminal.
   The self-test's ninth run tests it against a scripted gateway, on every platform.
-- **The reference gateway**: `bench/aowlink_gateway.py` (Python; C++ for Linux later). Any
+- **The reference gateway**: `bench/aowlink_gateway.py` (Python, for the bench). Any
   number of SocketCAN interfaces, one control client, monitors, STATUS from `ip -details`.
+- **The HAT's gateway**: `aow-linkd` in AgOpenWeb-HAT (C++, its `docs/PLAN_VT.md` section 2,
+  2026-10-25): a service on the CM4, off by default, on `hatcan2`, listening on loopback unless
+  the unit is told otherwise. What ships; the reference gateway stays the bench's fallback.
 - **The checker**: `bench/aowlink_check.py HOST [PORT]` tests any gateway against this section:
   hello, status, heartbeat rate, busy, monitors, the silence rule, versions, bad input, unknown
-  messages. The reference gateway passes on the CM4 and in a container.
-- **To build**: the HAT's gateway service in AgOpenWeb-HAT (its `docs/PLAN_VT.md`; the checker
-  is its test), and the ESP32 gateway.
+  messages. Both gateways pass, on the CM4 and in a container.
+- **To build**: the ESP32 gateway.
 
 ## 6. The timers that matter (ISO 11783-3 and -6)
 

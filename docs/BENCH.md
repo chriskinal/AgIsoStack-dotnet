@@ -82,13 +82,16 @@ access point plus netem when runs have to be compared.
 `bench/devices.env` (from `devices.env.example`), then `bench/deploy.sh` copies the AOW link
 gateway (`aowlink_gateway.py`) and its checker, the capture, checks, netem, `gateway.sh`, the pool
 and the built implements to `~/vtbench` on the gateway (`gateway.sh check` runs the checker
-there). `bench/run.sh CLIENT NAME [IMPLEMENT]` runs one: the gateway up, the terminal app started,
+there). With AgOpenWeb-HAT's `aow-linkd` service running on the gateway (0.2.24 on, enabled with
+`sudo systemctl enable --now aow-linkd` and `--listen 0.0.0.0` in `/etc/aow-hat/linkd.env`), the
+runs go through it and the relay's lines come from its journal; with it stopped, through
+`aowlink_gateway.py`. `bench/run.sh CLIENT NAME [IMPLEMENT]` runs one: the gateway up, the terminal app started,
 the implement started 4 s later, the verdict awaited, every log gathered into `bench/out/NAME.txt`
 and the relay's frame dump kept on the gateway as `dump-NAME.log`. `sweep.sh` runs N under one
 impairment, `verify.sh` N without the capture with a frame-loss check, `selftest.sh` the
 in-process self-test on the tablets. `local.sh` is the bench with no hardware: the gateway,
 the implement and the terminal in one Linux container on a virtual CAN bus (vcan), link cuts
-by netem on loopback.
+by netem on loopback; `GATEWAY=path/to/aow-linkd` runs the HAT's gateway there instead.
 
 **The test implements** (`bench/implement/build.sh`, Linux arm64; on the Mac in AgOpenWeb-HAT's
 `aow-hat-dev` container): upstream's VT example at 16 packets per DPO (`VT3ExampleTarget`) and

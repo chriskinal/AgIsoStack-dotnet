@@ -45,7 +45,7 @@ esac
 g stop >/dev/null
 {
   echo "--- relay"
-  gw "grep -E client $GW_DIR/relay.log | tail -2"
+  g clients | tail -2
   echo "--- sniff (frames, first seen s)"
   gw "pkill -TERM -f '[s]niff.py'; sleep 1.5; cat $GW_DIR/sniff.out 2>/dev/null"
   echo "--- implement"

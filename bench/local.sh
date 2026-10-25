@@ -7,13 +7,16 @@
 #   may be given. Needs native/build-linux-arm64 and bench/implement/out (build.sh for each).
 # Output: bench/out/local-IMPLEMENT.txt (the terminal), local-gateway.log, local-implement.log,
 # local-cuts.log. CHECK=1 also runs bench/aowlink_check.py against the gateway afterwards
-# (the implement still on the bus).
+# (the implement still on the bus). GATEWAY=/path/to/aow-linkd runs that gateway (AgOpenWeb-HAT's,
+# a Linux arm64 build) instead of bench/aowlink_gateway.py.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 IMPL=${1:-VT3Example255}
 shift || true
 mkdir -p "$REPO/bench/out"
-docker run --rm --privileged --platform linux/arm64 -v "$REPO:/src:ro" -v "$REPO/bench/out:/out" \
+GW_MOUNT=()
+[ -n "${GATEWAY:-}" ] && GW_MOUNT=(-v "$(cd "$(dirname "$GATEWAY")" && pwd)/$(basename "$GATEWAY"):/gateway:ro")
+docker run --rm --privileged --platform linux/arm64 -v "$REPO:/src:ro" -v "$REPO/bench/out:/out" ${GW_MOUNT[@]+"${GW_MOUNT[@]}"} \
   -e IMPL="$IMPL" -e STALLS="$*" -e CHECK="${CHECK:-}" mcr.microsoft.com/dotnet/sdk:10.0 bash -c '
   set -u
   (apt-get update -qq && apt-get install -y -qq iproute2 python3 >/dev/null) >/dev/null 2>&1
@@ -24,7 +27,9 @@ docker run --rm --privileged --platform linux/arm64 -v "$REPO:/src:ro" -v "$REPO
   (cd /w/dotnet/console && dotnet build -c Release -v q -nologo 2>&1 | grep -E " error " )
   cd /out
   rm -f local-cuts.log
-  python3 -u /src/bench/aowlink_gateway.py vcan0 2323 > local-gateway.log 2>&1 &
+  if [ -e /gateway ]; then /gateway --can vcan0 --port 2323 > local-gateway.log 2>&1 &
+  else python3 -u /src/bench/aowlink_gateway.py vcan0 2323 > local-gateway.log 2>&1 &
+  fi
   sleep 0.5
   (cd /w/dotnet/console && dotnet bin/Release/net10.0/IsoShimConsole.dll bench 127.0.0.1 2323 > /out/local-$IMPL.txt 2>&1) &
   T=$!
@@ -41,7 +46,7 @@ docker run --rm --privileged --platform linux/arm64 -v "$REPO:/src:ro" -v "$REPO
   done
   wait $T
   if [ -n "${CHECK:-}" ]; then echo "--- conformance"; python3 /src/bench/aowlink_check.py 127.0.0.1 2323; fi
-  pkill -f VT3Example; pkill -f aowlink_gateway
+  pkill -f VT3Example; pkill -f aowlink_gateway; pkill -x gateway
   cat /out/local-$IMPL.txt
   echo "--- gateway"; grep -E "client" /out/local-gateway.log; cat /out/local-cuts.log 2>/dev/null
   echo "--- implement"; grep -E "VT\]|ETP|rror|arn" /out/local-implement.log | head -12'

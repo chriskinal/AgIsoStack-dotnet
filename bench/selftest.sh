@@ -6,7 +6,9 @@
 #   linux    in .NET SDK containers (Docker, OrbStack), arm64 and x64 (x64 under Rosetta), with
 #            native/build-linux-RID/ from native/build.sh linux
 #   windows  win-x64, self-contained, in the Parallels VM $WIN_VM (devices.env), with
-#            native/build-windows/ from native/build.sh windows; runs from %TEMP%\isoshim-test
+#            native/build-windows/ from native/build.sh windows; runs from %TEMP%\isoshim-test, its
+#            output to bench/out/selftest-win-x64.log over the share (prlctl exec loses some of a
+#            program's output)
 . "$(dirname "$0")/env.sh"
 REPO=$(cd "$BENCH/.." && pwd)
 F='^---|isoshim|PASS|FAIL|stopped|callback'
@@ -22,11 +24,13 @@ for t in ${@:-ios android}; do
   elif [ $t = windows ]; then
     echo "=== Windows x64 (${WIN_VM:?set WIN_VM, the Parallels VM name, in bench/devices.env})"
     W=$OUT/selftest-win-x64
-    rm -rf "$W"
+    L=$OUT/selftest-win-x64.log
+    rm -rf "$W" "$L"
     dotnet publish "$REPO/dotnet/console" -c Release -r win-x64 --self-contained -p:DesktopOnly=true -o "$W" | grep -E " error "
     prlctl resume "$WIN_VM" >/dev/null 2>&1
     for i in $(seq 1 60); do prlctl exec "$WIN_VM" --current-user cmd.exe /c ver >/dev/null 2>&1 && break; sleep 1; done
-    prlctl exec "$WIN_VM" --current-user cmd.exe /c "robocopy \\\\Mac\\AllFiles${W//\//\\} %TEMP%\\isoshim-test /MIR /NFL /NDL /NJH /NJS >nul & %TEMP%\\isoshim-test\\IsoShimConsole.exe" 2>&1 | grep -E "$F|Unhandled"
+    prlctl exec "$WIN_VM" --current-user cmd.exe /c "robocopy \\\\Mac\\AllFiles${W//\//\\} %TEMP%\\isoshim-test /MIR /NFL /NDL /NJH /NJS >nul & %TEMP%\\isoshim-test\\IsoShimConsole.exe > \\\\Mac\\AllFiles${L//\//\\} 2>&1" 2>&1 | tr -d '\r' | grep -vE "^\s*$"
+    if [ -f "$L" ]; then tr -d '\r' < "$L" | grep -E "$F|Unhandled"; else echo "FAIL: the VM wrote no log (prlctl exec's own output, if any, is above)"; fi
   elif [ $t = ios ]; then
     echo "=== iPad"
     L=$OUT/selftest-ios.log

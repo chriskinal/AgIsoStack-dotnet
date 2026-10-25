@@ -1,3 +1,4 @@
+System.Console.OutputEncoding = System.Text.Encoding.UTF8;  // Windows writes its OEM code page otherwise
 if (args.Length >= 3 && args[0] == "bench")
     return IsoShimBench.Run(args[1], int.Parse(args[2]), System.Console.WriteLine) ? 0 : 1;
 if (args.Length >= 2 && args[0] == "screens")

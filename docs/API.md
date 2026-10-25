@@ -27,6 +27,7 @@ Calls may come from any thread; from that thread (a handler) they run at once. O
 | `void Stop()` | Takes the terminals off the bus and ends the thread, waiting for any pool still parsing. Calls not yet done fail. From the stack's own thread it only asks: it stops after the current step. Safe at any point; does nothing if not running. |
 | `void Dispose()` | `Stop()`. |
 | `bool IsRunning` | |
+| `const int HeldRepeatMilliseconds = 200` | How often a key or button still down is sent as held. |
 | `void Receive(uint id, ReadOnlySpan<byte> data, bool extended = true, int channel = 0)` | A frame from the bus. Any thread; returns at once. At most 8 bytes (`ArgumentException`). |
 | `void LinkDown()` | The link to the bus is gone. Any thread. |
 | `void LinkUp()` | The link is up (again): every soft key or button held when it went, or pressed while it was down, is sent as aborted, each terminal's address claim is sent again, and the bus is asked for every address claim, so the terminals and the implements already on it know each other. Any thread. |
@@ -65,9 +66,10 @@ implement this terminal shows.
 | `Task<bool> EscapeAsync()` | Abandons the open field (VT ESC). True: one was open. |
 | `Task<T> InvokeAsync<T>(Func<T> call)` | The stack's. |
 
-`KeyState`: `Pressed` (1), `Held` (2, repeat about every 200 ms while down: the host repeats it),
-`Released` (0), `Aborted` (3, the press ended without a release). A press must end in a release or
-an abort.
+`KeyState`: `Pressed` (1), `Held` (2), `Released` (0), `Aborted` (3, the press ended without a
+release). A press must end in a release or an abort. The stack sends `Held` itself for every key
+or button still down, every `VirtualTerminalStack.HeldRepeatMilliseconds` (200), while the link is
+up; a `Held` from the host is accepted and restarts the count.
 
 `InputResult`: `Entered` (1, sent to the implement), `Invalid` (-1, not a valid value: the field is
 unchanged and stays open), `NotAnInput` (0, not an enabled input on the shown screen).

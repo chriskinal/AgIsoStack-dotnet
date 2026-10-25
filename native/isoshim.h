@@ -124,7 +124,7 @@ ISOSHIM_API void isoshim_reply(const uint8_t *data, int32_t len);
 enum isoshim_key_state {
 	ISOSHIM_RELEASED = 0,
 	ISOSHIM_PRESSED = 1,
-	ISOSHIM_HELD = 2,    // still pressed: repeat about every 200 ms while held
+	ISOSHIM_HELD = 2,    // still pressed: repeat about every 200 ms while held (the C# stack does this; a C host does it itself)
 	ISOSHIM_ABORTED = 3, // the press ended without a release (the finger slid off, the link went)
 };
 // 1: sent (or queued to send at the next step).

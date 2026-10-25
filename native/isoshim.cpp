@@ -821,7 +821,7 @@ int32_t isoshim_test_implement(int32_t terminal, const uint8_t *pool, int32_t po
 			self->client->send_change_active_mask(0, 2000);
 	});
 	// What the implement hears of the operator's input, for the self-test to check, under its
-	// terminal: {"type":"implement","event":"select"|"esc"|"number"|"string","o":id,...}
+	// terminal: {"type":"implement","event":"select"|"esc"|"number"|"string"|"key","o":id,...}
 	const auto heard = [](const char *event, std::uint16_t id) {
 		auto json = std::make_shared<isoshim::Json>();
 		json->begin_object().key("type").value("implement").key("event").value(event).key("o").value(static_cast<int>(id));
@@ -832,6 +832,13 @@ int32_t isoshim_test_implement(int32_t terminal, const uint8_t *pool, int32_t po
 		json->key("selected").value(e.objectSelected).key("open").value(e.objectOpenForInput).end_object();
 		message(terminal, json->str());
 	});
+	const auto key = [heard, terminal](const isobus::VirtualTerminalClient::VTKeyEvent &e) {
+		auto json = heard("key", e.objectID);
+		json->key("state").value(static_cast<int>(e.keyEvent)).end_object(); // 0 released .. 3 aborted
+		message(terminal, json->str());
+	};
+	self->client->get_vt_soft_key_event_dispatcher().add_listener(key);
+	self->client->get_vt_button_event_dispatcher().add_listener(key);
 	self->client->get_vt_esc_message_event_dispatcher().add_listener([heard, terminal](const isobus::VirtualTerminalClient::VTESCMessageEvent &e) {
 		auto json = heard("esc", e.objectID);
 		json->end_object();

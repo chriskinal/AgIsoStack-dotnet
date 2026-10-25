@@ -39,9 +39,13 @@ public sealed unsafe class VirtualTerminalStack : IDisposable
     Thread? thread;
     volatile bool stopping;
     bool closed; // under work's lock: no more calls are taken
-    // On the stack's thread: keys and buttons pressed and not released, by terminal, and those owed
-    // an abort when a gateway link comes back (held when it went, or pressed while it was down).
-    readonly HashSet<(int Terminal, bool Button, ushort Id)> held = new(), owed = new();
+    // On the stack's thread: keys and buttons pressed and not released, by terminal, with when each
+    // is next sent as still held; and those owed an abort when a gateway link comes back (held
+    // when it went, or pressed while it was down).
+    readonly Dictionary<(int Terminal, bool Button, ushort Id), long> held = new();
+    readonly HashSet<(int Terminal, bool Button, ushort Id)> owed = new();
+    /// <summary>How often a key or button still down is sent as held (ISO 11783-6: about every 200 ms).</summary>
+    public const int HeldRepeatMilliseconds = 200;
     bool linkDown;
 
     public VirtualTerminalStack(VirtualTerminalOptions options)
@@ -140,6 +144,7 @@ public sealed unsafe class VirtualTerminalStack : IDisposable
         while (!stopping)
         {
             while (work.TryDequeue(out var call)) call();
+            RepeatHeld();
             isoshim_step();
             wake.WaitOne(interval);
         }
@@ -179,11 +184,29 @@ public sealed unsafe class VirtualTerminalStack : IDisposable
         var key = (terminal, button, id);
         if (state is KeyState.Pressed or KeyState.Held)
         {
-            if (sent) held.Add(key);
+            if (sent) held[key] = Environment.TickCount64 + HeldRepeatMilliseconds;
             if (sent && linkDown) owed.Add(key);
         }
         else held.Remove(key);
         return sent;
+    }
+
+    // Every key and button still down, sent as held when it is due, so the host sends only the
+    // press and its end. Not while the link is down (the frames would be lost; the key is owed an
+    // abort). One that has left the screen (its mask changed) is no longer sent.
+    void RepeatHeld()
+    {
+        if (held.Count == 0 || linkDown) return;
+        long now = Environment.TickCount64;
+        foreach (var key in held.Where(k => k.Value <= now).Select(k => k.Key).ToList())
+        {
+            var (terminal, button, id) = key;
+            int state = (int)KeyState.Held;
+            if ((button ? isoshim_button(terminal, id, state) : isoshim_soft_key(terminal, id, state)) == 1)
+                held[key] = now + HeldRepeatMilliseconds;
+            else
+                held.Remove(key);
+        }
     }
 
     // ---- a gateway link (VirtualTerminalLink.Attach calls these) ----
@@ -196,7 +219,7 @@ public sealed unsafe class VirtualTerminalStack : IDisposable
         _ = InvokeAsync(() =>
         {
             linkDown = true;
-            owed.UnionWith(held);
+            owed.UnionWith(held.Keys);
             return 0;
         });
     }

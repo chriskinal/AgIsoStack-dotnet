@@ -120,8 +120,9 @@ implement each: each terminal has its own address and only its own implement, bo
 up at once and both take input, and Identify VT reaches both. The ninth drives the C# classes,
 `VirtualTerminalStack` and `VirtualTerminal`, as a host would: two sessions with one store (the
 second loads the pool the first stored), input results, a call from inside a handler, stop from
-either thread, every event on the stack's one thread, and events reaching the right one of two
-terminals. The tenth puts `AowLink` between the terminal and the
+either thread, every event on the stack's one thread, events reaching the right one of two
+terminals, and a soft key held down repeated as held every 200 ms (none while the link is down, an
+abort when it is back). The tenth puts `AowLink` between the terminal and the
 implement, through a scripted gateway on loopback: the hello, the pool over the link, a gateway
 gone silent (dropped after 1 s, back at once), refusals while busy, and a soft key held when the
 link went, aborted when it is back.

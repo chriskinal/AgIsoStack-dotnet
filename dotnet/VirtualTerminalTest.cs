@@ -181,9 +181,78 @@ public static class VirtualTerminalTest
             Check("stopped: both", !stack.IsRunning && stack.Terminals.All(t => t.Address == -1));
         }
 
+        // A key held down: the stack repeats it as held about every 200 ms, the host sends only the
+        // press and its end; none while the link is down, and an abort when it is back.
+        async Task HeldKeys()
+        {
+            var heard = new ConcurrentQueue<(long Ms, int State)>();
+            var clock = Stopwatch.StartNew();
+            bool shown = false;
+            var stack = new VirtualTerminalStack(new VirtualTerminalOptions
+            {
+                Send = (channel, id, data, extended) =>
+                {
+                    unsafe { fixed (byte* p = data) IsoShim.isoshim_receive(1 - channel, id, p, data.Length, extended ? 1 : 0); }
+                },
+            });
+            var vt = stack.Terminals[0];
+            vt.Message += json =>
+            {
+                if (json.StartsWith("{\"type\":\"screen\"") && json.Contains("\"o\":5000,")) shown = true;
+                if (!json.StartsWith("{\"type\":\"implement\",\"event\":\"key\"")) return;
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.GetProperty("o").GetInt32() == 5000)
+                    heard.Enqueue((clock.ElapsedMilliseconds, doc.RootElement.GetProperty("state").GetInt32()));
+            };
+            byte[] vt3 = Pool("VT3TestPool.iop");
+            stack.Start();
+            try
+            {
+                await stack.InvokeAsync(() => { unsafe { fixed (byte* p = vt3) return IsoShim.isoshim_test_implement(0, p, vt3.Length); } });
+                while (clock.ElapsedMilliseconds < 20000 && !shown) await Task.Delay(5);
+                Check("the VT3 implement shown, with soft key 5000", shown);
+                if (!shown) return;
+                async Task<List<(long Ms, int State)>> Hold(int ms, Func<Task>? during = null)
+                {
+                    heard.Clear();
+                    await vt.SoftKeyAsync(5000, KeyState.Pressed);
+                    if (during != null) await during();
+                    else await Task.Delay(ms);
+                    return heard.ToList();
+                }
+                // Down 300 ms, the link gone for 600 ms of it, then back: an abort, no more held.
+                var cut = await Hold(0, async () =>
+                {
+                    await Task.Delay(300);
+                    stack.LinkDown();
+                    await Task.Delay(50);
+                    int before = heard.Count;
+                    await Task.Delay(600);
+                    Check($"no held while the link is down ({heard.Count - before})", heard.Count == before);
+                    stack.LinkUp();
+                    await Task.Delay(500);
+                });
+                Check($"the link back: the key aborted, and no held after ({string.Join(" ", cut.Select(h => h.State))})",
+                    cut.Count >= 2 && cut[0].State == 1 && cut[^1].State == 3 && cut.Count(h => h.State == 3) == 1);
+                // Down about a second, then released.
+                var down = await Hold(1000);
+                await vt.SoftKeyAsync(5000, KeyState.Released);
+                await Task.Delay(500);
+                var all = heard.ToList();
+                var helds = all.Where(h => h.State == 2).Select(h => h.Ms).ToList();
+                var gaps = helds.Zip(helds.Skip(1), (a, b) => b - a).ToList();
+                Check($"held {helds.Count} times in a second, every {(gaps.Count > 0 ? $"{gaps.Min()} to {gaps.Max()}" : "-")} ms",
+                    helds.Count is >= 3 and <= 6 && gaps.All(g => g is >= 150 and <= 400) && helds.Count > 0 && helds[0] - all[0].Ms is >= 150 and <= 400);
+                Check($"pressed first, released last, nothing after ({string.Join(" ", all.Select(h => h.State))})",
+                    all.Count >= 2 && all[0].State == 1 && all[^1].State == 0 && all.Count(h => h.State == 0) == 1);
+            }
+            finally { stack.Stop(); }
+        }
+
         await Session(fromStore: false);
         await Session(fromStore: true);
         await TwoTerminals();
+        await HeldKeys();
         log(failures == 0 ? "PASS: the C# classes" : $"FAIL: the C# classes, {failures} checks failed");
         return failures == 0;
     }

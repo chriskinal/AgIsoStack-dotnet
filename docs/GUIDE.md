@@ -299,61 +299,19 @@ A `hit` also carries `sel` (has the focus), `open` (being edited) and, for latch
 
 ### Soft keys and buttons: press, hold, release
 
-The standard wants a key that stays down to be reported as **held about every 200 ms**, and every
-press to end in a release or an abort. The terminal doesn't repeat by itself: the host does.
-This helper does it; feed it the page's touch down and touch up:
+Send `Pressed` when the touch goes down, and `Released` when it comes up (or `Aborted` if it
+slides off or is cancelled). Every press must end in one of the two:
 
 ```csharp
-/// <summary>Sends a key's press, a held about every 200 ms while it is down, and its release.</summary>
-sealed class KeyRepeater(VirtualTerminal vt) : IDisposable
-{
-    sealed class Down { public Timer? Timer; }
-    readonly Dictionary<(bool Button, ushort Id), Down> down = new();
-
-    Task<bool> Send((bool Button, ushort Id) key, KeyState state) =>
-        key.Button ? vt.ButtonAsync(key.Id, state) : vt.SoftKeyAsync(key.Id, state);
-
-    public void Press(bool button, ushort id)
-    {
-        var key = (button, id);
-        lock (down)
-        {
-            if (down.ContainsKey(key)) return;
-            var d = new Down();
-            down[key] = d;
-            _ = Send(key, KeyState.Pressed);
-            d.Timer = new Timer(_ =>
-            {
-                lock (down) if (down.TryGetValue(key, out var now) && now == d) _ = Send(key, KeyState.Held);
-            }, null, 200, 200);
-        }
-    }
-
-    /// <summary>The touch ended: released, or aborted when it slid off or was cancelled.</summary>
-    public void Release(bool button, ushort id, bool aborted = false)
-    {
-        lock (down)
-        {
-            if (!down.Remove((button, id), out var d)) return;
-            d.Timer?.Dispose();
-            _ = Send((button, id), aborted ? KeyState.Aborted : KeyState.Released);
-        }
-    }
-
-    public void Dispose()
-    {
-        lock (down)
-        {
-            foreach (var (key, d) in down)
-            {
-                d.Timer?.Dispose();
-                _ = Send(key, KeyState.Aborted);
-            }
-            down.Clear();
-        }
-    }
-}
+await vt.SoftKeyAsync(5000, KeyState.Pressed);     // touch down
+await vt.SoftKeyAsync(5000, KeyState.Released);    // touch up
 ```
+
+While a key or button is down, the stack reports it to the implement as **held** about every
+200 ms (`VirtualTerminalStack.HeldRepeatMilliseconds`), as the standard asks, so the host doesn't
+repeat anything. A `Held` the host sends itself is accepted and restarts the count. The repeats
+pause while the link is down; when it comes back, a key still down is sent as aborted. A key that
+leaves the screen (the mask changed under the finger) stops repeating.
 
 The calls return `true` when the message was sent. `false` means the object is not on the shown
 screen (the screen changed under the finger). A call made while the terminal is stopped fails with

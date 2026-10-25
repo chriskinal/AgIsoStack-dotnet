@@ -21,8 +21,8 @@ Rules an integration must keep:
   `InvalidOperationException` when the stack isn't running.
 - `Send` (in options) runs on the stack's thread and its span is valid only during the call:
   copy it, queue it, return. `Receive` and `AowLink.Send` work from any thread.
-- Every key or button press must end in `Released` or `Aborted`. While a key is down the host
-  sends `Held` about every 200 ms (the terminal doesn't repeat by itself).
+- Every key or button press must end in `Released` or `Aborted`. Send only the press and its end:
+  the stack repeats `Held` every 200 ms while a key is down.
 - Input numbers are raw: shown = (raw + offset) * scale. `SetNumberAsync` takes raw, within min..max.
 - Drive the field editor from `edit` messages (`"o": null` closes it), not from your own calls.
 - Keep pictures from the `Image` event for the life of the terminal; screens refer to them by id.

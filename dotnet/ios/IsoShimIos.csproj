@@ -18,7 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="../AgIsoStack.VirtualTerminal/AgIsoStack.VirtualTerminal.csproj" />
     <Compile Include="../VirtualTerminalTest.cs" />
-    <Compile Include="../CanLinkTest.cs" />
+    <Compile Include="../AowLinkTest.cs" />
     <Compile Include="../IsoShimSpike.cs" />
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />

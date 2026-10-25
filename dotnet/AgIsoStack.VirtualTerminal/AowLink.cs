@@ -1,4 +1,4 @@
-// The client end of the gateway protocol (docs/TRANSPORT.md section 5, "CAN link" version 1): one
+// The client end of the gateway protocol (docs/TRANSPORT.md section 5, "AOW link" version 1): one
 // TCP connection to a gateway on the bus, every CAN frame both ways. It connects, says hello,
 // keeps a heartbeat, drops the link after 1 s of silence and connects again on its own.
 using System;
@@ -51,14 +51,14 @@ public delegate void LinkFrameHandler(int channel, uint id, ReadOnlySpan<byte> d
 /// link's own thread, as do the other events; <see cref="Send"/> may be called from any thread.
 /// For a <see cref="VirtualTerminal"/>, <see cref="VirtualTerminalLink.Attach"/> wires the two.
 /// </summary>
-public sealed class CanLink : IDisposable
+public sealed class AowLink : IDisposable
 {
     public const int DefaultPort = 2323;
     public const byte Version = 1;
     // ConnectMs: a connection attempt made during a cut waits no longer than this once it is over.
     const int HeartbeatMs = 100, SilenceMs = 1000, HelloMs = 2000, RetryMs = 250, VersionRetryMs = 5000, ConnectMs = 500;
     const byte Hello = 1, Frame = 2, Heartbeat = 3, Status = 4, Close = 5;
-    static readonly byte[] Magic = "CANL"u8.ToArray();
+    static readonly byte[] Magic = "AOWL"u8.ToArray();
 
     readonly string host, name;
     readonly int port;
@@ -76,7 +76,7 @@ public sealed class CanLink : IDisposable
     uint heardTime;
     long heardAtMs = -1;
 
-    public CanLink(string host, int port = DefaultPort, string name = "", LinkRole role = LinkRole.Control)
+    public AowLink(string host, int port = DefaultPort, string name = "", LinkRole role = LinkRole.Control)
     {
         this.host = host;
         this.port = port;
@@ -107,7 +107,7 @@ public sealed class CanLink : IDisposable
     {
         if (thread != null) return;
         stopping = false;
-        thread = new Thread(Run) { IsBackground = true, Name = "CanLink" };
+        thread = new Thread(Run) { IsBackground = true, Name = "AowLink" };
         thread.Start();
     }
 
@@ -236,7 +236,7 @@ public sealed class CanLink : IDisposable
             pendingLength = 0;
             up = true;
         }
-        writer = new Thread(() => Write(s)) { IsBackground = true, Name = "CanLink-tx" };
+        writer = new Thread(() => Write(s)) { IsBackground = true, Name = "AowLink-tx" };
         writer.Start();
         Raise(() => Connected?.Invoke(gateway));
         s.ReceiveTimeout = SilenceMs;
@@ -355,7 +355,7 @@ public sealed class CanLink : IDisposable
     static GatewayInfo? ParseHello(ReadOnlySpan<byte> b, out string why)
     {
         why = "";
-        if (b.Length < 8 || !b.Slice(0, 4).SequenceEqual(Magic)) { why = "not a CAN link gateway"; return null; }
+        if (b.Length < 8 || !b.Slice(0, 4).SequenceEqual(Magic)) { why = "not a AOW link gateway"; return null; }
         if (b[4] != Version) { why = $"version {b[4]}, not {Version}"; return null; }
         try
         {
@@ -429,7 +429,7 @@ public static class VirtualTerminalLink
     /// state to <see cref="VirtualTerminal.LinkDown"/> and <see cref="VirtualTerminal.LinkUp"/> (so a
     /// key held when the link went is released when it comes back). The terminal's frames go out
     /// through its options: <c>Send = link.Send</c>.</summary>
-    public static void Attach(this VirtualTerminal terminal, CanLink link)
+    public static void Attach(this VirtualTerminal terminal, AowLink link)
     {
         link.FrameReceived += (channel, id, data, extended, _) => terminal.Receive(id, data, extended, channel);
         link.Connected += _ => terminal.LinkUp();

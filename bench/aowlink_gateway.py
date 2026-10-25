@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Reference gateway for the CAN link protocol, version 1 (docs/TRANSPORT.md section 5): SocketCAN
+"""Reference gateway for the AOW link protocol, version 1 (docs/TRANSPORT.md section 5): SocketCAN
 interfaces <-> TCP clients. One control client, any number of monitors.
 
-  canlink_gateway.py IFACE[,IFACE...] [PORT]       channels are numbered in the order given
+  aowlink_gateway.py IFACE[,IFACE...] [PORT]       channels are numbered in the order given
 
 Knows nothing of ISOBUS. Every frame waiting when a CAN socket is read goes out in one TCP write;
 Nagle is off. A client that has sent nothing for 1 s is closed with what it had not yet been
@@ -14,7 +14,7 @@ import errno, json, select, socket, struct, subprocess, sys, time
 IFACES = (sys.argv[1] if len(sys.argv) > 1 else "hatcan2").split(",")
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 2323
 NAME = f"{socket.gethostname()} {','.join(IFACES)}"
-VERSION, MAGIC = 1, b"CANL"
+VERSION, MAGIC = 1, b"AOWL"
 HELLO, FRAME, HEARTBEAT, STATUS, CLOSE = 1, 2, 3, 4, 5
 R_VERSION, R_BUSY, R_TIMEOUT, R_PROTOCOL, R_SHUTDOWN = 1, 2, 3, 4, 5
 HEARTBEAT_S, SILENCE_S, HELLO_S, TX_LIMIT_S, STATUS_S = 0.1, 1.0, 2.0, 0.1, 1.0
@@ -182,7 +182,7 @@ def main():
     srv.bind(("0.0.0.0", PORT))
     srv.listen(4)
     srv.setblocking(False)
-    log(f"gateway {','.join(IFACES)} <-> tcp {PORT}, CAN link version {VERSION}")
+    log(f"gateway {','.join(IFACES)} <-> tcp {PORT}, AOW link version {VERSION}")
     clients = []
     control = None
     dump = None

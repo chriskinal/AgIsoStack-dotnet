@@ -1,5 +1,5 @@
-// Bench: the terminal on a real bus through a CAN link gateway (bench/canlink_gateway.py on the CM4,
-// docs/TRANSPORT.md section 5), with the classes a host uses: CanLink attached to VirtualTerminal.
+// Bench: the terminal on a real bus through an AOW link gateway (bench/aowlink_gateway.py on the CM4,
+// docs/TRANSPORT.md section 5), with the classes a host uses: AowLink attached to VirtualTerminal.
 // Waits for the example implement (NAME function 16), shows it, presses its alarm soft key (5000),
 // and expects the alarm mask (2000) back. Measures the link's round trip from its heartbeats, and
 // counts upload attempts (ETP request-to-send aimed at us), aborts and link drops.
@@ -20,7 +20,7 @@ using AgIsoStack;
 public static class IsoShimBench
 {
     static VirtualTerminal? vt;
-    static CanLink? link;
+    static AowLink? link;
     static int links, drops;
     static readonly Stopwatch clock = new();
     static long framesOut, framesIn;
@@ -116,7 +116,7 @@ public static class IsoShimBench
         serverAddress = poolBad = mask = -1;
         links = drops = 0;
         lastArrival = -1;
-        link = new CanLink(host, port, $"isoshim bench on {RuntimeInformation.OSDescription}");
+        link = new AowLink(host, port, $"isoshim bench on {RuntimeInformation.OSDescription}");
         link.Connected += g =>
         {
             links++;

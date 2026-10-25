@@ -79,8 +79,8 @@ access point plus netem when runs have to be compared.
 
 ## Running
 
-`bench/devices.env` (from `devices.env.example`), then `bench/deploy.sh` copies the CAN link
-gateway (`canlink_gateway.py`) and its checker, the capture, checks, netem, `gateway.sh`, the pool
+`bench/devices.env` (from `devices.env.example`), then `bench/deploy.sh` copies the AOW link
+gateway (`aowlink_gateway.py`) and its checker, the capture, checks, netem, `gateway.sh`, the pool
 and the built implements to `~/vtbench` on the gateway (`gateway.sh check` runs the checker
 there). `bench/run.sh CLIENT NAME [IMPLEMENT]` runs one: the gateway up, the terminal app started,
 the implement started 4 s later, the verdict awaited, every log gathered into `bench/out/NAME.txt`

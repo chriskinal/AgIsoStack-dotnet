@@ -147,10 +147,10 @@ pool store the terminal answered Store Version with an error, and upstream's VT 
 resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
 now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).
 
-## 2026-10-24: the CAN link protocol (version 1) on the bench
+## 2026-10-24: the AOW link protocol (version 1) on the bench
 
-The terminal through `CanLink` (attached to `VirtualTerminal`) and the reference gateway
-(`bench/canlink_gateway.py`) on the CM4, home Wi-Fi. The gateway passes `canlink_check.py` on the
+The terminal through `AowLink` (attached to `VirtualTerminal`) and the reference gateway
+(`bench/aowlink_gateway.py`) on the CM4, home Wi-Fi. The gateway passes `aowlink_check.py` on the
 CM4 (and reads the bus's 250 kbit/s from the kernel); the self-test's link run passes on the Mac,
 the iPad, the Galaxy Tab, Linux arm64 and x64, and Windows x64.
 

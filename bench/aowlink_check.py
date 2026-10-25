@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Checks a gateway against the CAN link protocol, version 1 (docs/TRANSPORT.md section 5): any
+"""Checks a gateway against the AOW link protocol, version 1 (docs/TRANSPORT.md section 5): any
 gateway, ours or another's. Needs the gateway to have no client connected, and some traffic on
 its bus helps (the monitor check waits for a frame).
 
-  canlink_check.py HOST [PORT]
+  aowlink_check.py HOST [PORT]
 
 Each check says ok or FAIL; the exit status is the number of failures.
 """
@@ -25,9 +25,9 @@ def msg(kind, body):
     return bytes((kind, len(body))) + body
 
 
-def hello(version=1, role=0, name="canlink_check"):
+def hello(version=1, role=0, name="aowlink_check"):
     n = name.encode()
-    return msg(HELLO, b"CANL" + bytes((version, role, len(n))) + n)
+    return msg(HELLO, b"AOWL" + bytes((version, role, len(n))) + n)
 
 
 def heartbeat():
@@ -81,7 +81,7 @@ class Conn:
 
 def parse_hello(b):
     """(version, role, name, [(bitrate, flags, name)]) from a gateway's HELLO body, or None."""
-    if b[:4] != b"CANL":
+    if b[:4] != b"AOWL":
         return None
     def text(at):
         return b[at + 1:at + 1 + b[at]].decode(errors="replace"), at + 1 + b[at]
@@ -95,7 +95,7 @@ def parse_hello(b):
     return b[4], b[5], name, channels
 
 
-print(f"CAN link check: {HOST}:{PORT}")
+print(f"AOW link check: {HOST}:{PORT}")
 
 # 1. Hello, status, heartbeats.
 c = Conn()
@@ -105,7 +105,7 @@ ok = m not in (None, "closed") and m[0] == HELLO
 check("answers HELLO with HELLO", ok, "" if ok else f"got {m}")
 if ok:
     h = parse_hello(m[1])
-    check("magic CANL, version 1, role 0", h is not None and h[0] == 1 and h[1] == 0, str(h[:2]) if h else "bad magic")
+    check("magic AOWL, version 1, role 0", h is not None and h[0] == 1 and h[1] == 0, str(h[:2]) if h else "bad magic")
     if h:
         print(f"       gateway \"{h[2]}\", channels {h[3]}")
     st = c.until(STATUS)
@@ -131,7 +131,7 @@ if ok:
     d.close()
     c.send(heartbeat())
     mon = Conn()
-    mon.send(hello(role=1, name="canlink_check monitor"))
+    mon.send(hello(role=1, name="aowlink_check monitor"))
     m = mon.next()
     if m not in (None, "closed") and m[0] == HELLO:
         print("       monitors are accepted")

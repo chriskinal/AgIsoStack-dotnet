@@ -1,4 +1,4 @@
-// Self-test of the gateway link: CanLink attached to VirtualTerminal, against a scripted gateway on
+// Self-test of the gateway link: AowLink attached to VirtualTerminal, against a scripted gateway on
 // loopback whose bus is the self-test's implement (channel 1, upstream's VT client in the native
 // library). Checks the hello, frames both ways, the round trip, a gateway gone silent, refusals
 // while busy, reconnecting, and that a soft key held when the link went is aborted when it is back.
@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 using AgIsoStack;
 using AgIsoStack.Interop;
 
-public static class CanLinkTest
+public static class AowLinkTest
 {
     /// <summary>A gateway on loopback, enough of one to test the client: one connection at a time.</summary>
     sealed class FakeGateway : IDisposable
@@ -121,7 +121,7 @@ public static class CanLinkTest
             Silent = false;
             var name = Encoding.UTF8.GetBytes("fake");
             var channel = Encoding.UTF8.GetBytes("fake0");
-            var body = new List<byte>(Encoding.ASCII.GetBytes("CANL")) { 1, 0, (byte)name.Length };
+            var body = new List<byte>(Encoding.ASCII.GetBytes("AOWL")) { 1, 0, (byte)name.Length };
             body.AddRange(name);
             body.Add(1);
             body.AddRange(BitConverter.GetBytes(250000));
@@ -177,7 +177,7 @@ public static class CanLinkTest
 
     static byte[] Pool(string name)
     {
-        using Stream s = typeof(CanLinkTest).Assembly.GetManifestResourceStream(name)!;
+        using Stream s = typeof(AowLinkTest).Assembly.GetManifestResourceStream(name)!;
         using var m = new MemoryStream();
         s.CopyTo(m);
         return m.ToArray();
@@ -187,7 +187,7 @@ public static class CanLinkTest
 
     static async Task<bool> RunAsync(Action<string> log)
     {
-        log("--- the gateway link, CanLink");
+        log("--- the gateway link, AowLink");
         int failures = 0;
         void Check(string what, bool pass)
         {
@@ -205,7 +205,7 @@ public static class CanLinkTest
             frame.Length >= 14 && frame[10] == 0x00 && frame[11] == code && frame[12] == 0x88 && frame[13] == 0x13;
 
         using var gateway = new FakeGateway();
-        using var link = new CanLink("127.0.0.1", gateway.Port, "isoshim self-test");
+        using var link = new AowLink("127.0.0.1", gateway.Port, "isoshim self-test");
         int ups = 0, downs = 0, statuses = 0;
         LinkCloseReason lastReason = LinkCloseReason.Lost;
         var rtts = new ConcurrentQueue<double>();

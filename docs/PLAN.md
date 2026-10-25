@@ -76,7 +76,7 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Then offer
    the wrapper.
 5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24).
-   Version 1 approved and built the same day: `CanLink` in the package, the reference gateway
+   Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
    devices, cuts mid-upload recovered). Next: the HAT's gateway service in AgOpenWeb-HAT, an ESP32
    gateway, a pairing key; a direct SocketCAN or USB adapter path for AgOpenWeb on the CM4 or a

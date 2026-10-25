@@ -72,7 +72,7 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 ```csharp
 using AgIsoStack;
 
-var link = new CanLink("192.168.4.1", name: "AgOpenWeb");             // a CAN link gateway on the bus
+var link = new AowLink("192.168.4.1", name: "AgOpenWeb");             // an AOW link gateway on the bus
 var vt = new VirtualTerminal(new VirtualTerminalOptions
 {
     Send = link.Send,                                                  // the terminal's frames out
@@ -113,7 +113,7 @@ checking what the implement hears, what is refused and what the screen shows. Th
 the implement's audio and volume commands reach the host. The eighth drives the C# class,
 `VirtualTerminal`, as a host would: two sessions with one store (the second loads the pool
 the first stored), input results, a call from inside a handler, stop from either thread, and
-every event on the terminal's one thread. The ninth puts `CanLink` between the terminal and the
+every event on the terminal's one thread. The ninth puts `AowLink` between the terminal and the
 implement, through a scripted gateway on loopback: the hello, the pool over the link, a gateway
 gone silent (dropped after 1 s, back at once), refusals while busy, and a soft key held when the
 link went, aborted when it is back.
@@ -135,10 +135,10 @@ bench/selftest.sh linux windows   # Linux arm64 and x64 in Docker; Windows x64 i
 ```
 
 **Bench** (`bench/`): the terminal on a tablet or the Mac, a Linux box with two CAN interfaces
-wired together as the gateway. `canlink_gateway.py`, the reference CAN link gateway
+wired together as the gateway. `aowlink_gateway.py`, the reference AOW link gateway
 (docs/TRANSPORT.md section 5), carries one interface's frames over TCP to the terminal; upstream's
 VT example implement runs on the other (`bench/implement/build.sh`). `netem.sh` delays, drops or
-cuts the link's traffic in both directions. `canlink_check.py` checks any gateway against the
+cuts the link's traffic in both directions. `aowlink_check.py` checks any gateway against the
 protocol. `local.sh` runs the whole bench in one Linux container on a virtual CAN bus, with link
 cuts if asked: no hardware.
 

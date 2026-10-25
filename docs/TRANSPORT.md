@@ -85,6 +85,15 @@ an ESP32 gains nothing.
   its control loop, not the ISOBUS channel. GVRET has a frame-send command, timestamps and a
   binary mode, but no heartbeat or bus status. Adopting it would let existing ESP32 gateways and
   SavvyCAN work; the gaps above need a place either way.
+- **Proemion's Byte Command Protocol** (published at docs.proemion.com, no license stated): the
+  host protocol of Proemion's CAN gateways over serial, USB, Ethernet, Bluetooth and Wi-Fi. Proven
+  in use, but the same shape as GVRET: a command set with a checksum per message, frames with an
+  optional 100 µs timestamp, transmit confirmations, an error-status byte (bus-off and overflow
+  flags, the last controller error), and bus load in messages per second. No heartbeat or rule
+  for a dead link, no error-passive state or error counters, no dropped counts, no hello or
+  version handshake, nothing on more than one client, no TCP port. Looked at 2026-10-25 and not
+  adopted: it would buy compatibility only with Proemion's own gateways, and lacks the parts
+  section 5 is built around. If one turns up on a machine, an adapter in the client is the way.
 - **Cannelloni**: UDP, set aside (section 2).
 - **The bench relay's format** (its first relay, replaced by section 5's gateway), little-endian
   records:
@@ -105,7 +114,8 @@ would need changing to transmit anyway, so the compatibility it seems to offer i
 ## 5. The protocol, version 1 (approved and built 2026-10-24)
 
 A small binary protocol over one TCP connection, MIT, written so an ESP32 can implement it in a
-few hundred lines. Working name: **CAN link** (the name is the user's call). The bench relay's
+few hundred lines. Name: **AOW link** (the user's choice, 2026-10-25; the working name "CAN link"
+was dropped because Proemion sells its gateways as CANlink). The bench relay's
 format (section 4) is its starting point.
 
 ### The connection
@@ -157,7 +167,7 @@ client sends nothing that was meant for the old one.
 
 | Type | Name | Direction | Body |
 |---|---|---|---|
-| `0x01` | HELLO | both, first | `magic:4` (`CANL`), `version:u8` (1), `role:u8`, `name:str`; from the gateway also `channels:u8` and per channel `bitrate:u32` (bit/s), `flags:u8` (bit 0 listen-only), `name:str` |
+| `0x01` | HELLO | both, first | `magic:4` (`AOWL`), `version:u8` (1), `role:u8`, `name:str`; from the gateway also `channels:u8` and per channel `bitrate:u32` (bit/s), `flags:u8` (bit 0 listen-only), `name:str` |
 | `0x02` | FRAME | both | `channel:u8`, `flags:u8` (bit 0 extended 29-bit id), `id:u32`, `time:u32`, `data:0..8` (the rest of the body) |
 | `0x03` | HEARTBEAT | both, every 100 ms | `time:u32` (sender's clock, ms), `echo:u32` (the `time` of the last HEARTBEAT received), `held:u16` (ms between receiving that one and sending this) |
 | `0x04` | STATUS | gateway | `channel:u8`, `state:u8`, `txErrors:u8`, `rxErrors:u8`, `rxDropped:u32`, `txDropped:u32` |
@@ -204,7 +214,7 @@ client sends nothing that was meant for the old one.
 ### Finding a gateway
 
 The address is configured (an ESP32 on its own access point has a fixed one; AgOpenWeb on the CM4
-uses loopback). A gateway may also announce itself by DNS-SD as `_canlink._tcp`, TXT `v=1`.
+uses loopback). A gateway may also announce itself by DNS-SD as `_aowlink._tcp`, TXT `v=1`.
 
 ### Security
 
@@ -214,11 +224,11 @@ point. A pairing key in HELLO is open (section 7) before a gateway joins a share
 
 ### Built against it
 
-- **The client**: `CanLink` in the package (docs/API.md), with `vt.Attach(link)` for a terminal.
+- **The client**: `AowLink` in the package (docs/API.md), with `vt.Attach(link)` for a terminal.
   The self-test's ninth run tests it against a scripted gateway, on every platform.
-- **The reference gateway**: `bench/canlink_gateway.py` (Python; C++ for Linux later). Any
+- **The reference gateway**: `bench/aowlink_gateway.py` (Python; C++ for Linux later). Any
   number of SocketCAN interfaces, one control client, monitors, STATUS from `ip -details`.
-- **The checker**: `bench/canlink_check.py HOST [PORT]` tests any gateway against this section:
+- **The checker**: `bench/aowlink_check.py HOST [PORT]` tests any gateway against this section:
   hello, status, heartbeat rate, busy, monitors, the silence rule, versions, bad input, unknown
   messages. The reference gateway passes on the CM4 and in a container.
 - **To build**: the HAT's gateway service in AgOpenWeb-HAT (its `docs/PLAN_VT.md`; the checker

@@ -162,7 +162,7 @@ native stack is one.
 
 ## The gateway link
 
-`CanLink` is the client end of the CAN link protocol (docs/TRANSPORT.md section 5): one TCP
+`AowLink` is the client end of the AOW link protocol (docs/TRANSPORT.md section 5): one TCP
 connection to a gateway on the bus. It says hello, keeps a heartbeat both ways, drops the link
 after 1 s of silence, and connects again on its own (at once, then every 250 ms; each attempt
 gives up after 500 ms). `Send` may be called from any thread and returns at once; a frame sent

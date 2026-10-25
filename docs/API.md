@@ -33,7 +33,7 @@ come from any thread; from that thread (a handler) they run at once. One per pro
 |---|---|
 | `void Receive(uint id, ReadOnlySpan<byte> data, bool extended = true, int channel = 0)` | A frame from the bus. Any thread; returns at once. At most 8 bytes (`ArgumentException`). |
 | `void LinkDown()` | The link to the bus is gone. Any thread. |
-| `void LinkUp()` | The link is back: every soft key or button held when it went, or pressed while it was down, is sent as aborted. Any thread. |
+| `void LinkUp()` | The link is up (again): every soft key or button held when it went, or pressed while it was down, is sent as aborted, the terminal's address claim is sent again, and the bus is asked for every address claim, so the terminal and the implements already on it know each other. Any thread. |
 
 Frames out go through `VirtualTerminalOptions.Send`. `AowLink`'s `Attach` makes all of these calls for you.
 
@@ -272,7 +272,7 @@ objects, VT 6 window masks and key groups.
 `native/isoshim.h`, for hosts not in .NET (the C# package is built on it; `AgIsoStack.Interop.IsoShim`
 declares it for P/Invoke, callbacks as `[UnmanagedCallersOnly]` function pointers, as iOS AOT
 requires). Library `isoshim` (`libisoshim.dylib`, `.so`, `isoshim.dll`; on iOS the static
-`libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 4.
+`libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 5.
 
 **Threading.** The stack runs on the thread that calls `isoshim_step` and nowhere else. Every
 function except `isoshim_receive` and `isoshim_set_log`, and every callback except the log, belongs
@@ -293,6 +293,7 @@ clear-to-send).
 | `int32_t isoshim_select(uint16_t id, int32_t open)` | 0xFFFF selects nothing. 1: done. |
 | `int32_t isoshim_set_number(uint16_t id, uint32_t value)`, `isoshim_set_string(uint16_t id, const char *utf8, int32_t len)` | 1 entered, -1 invalid, 0 not an input. |
 | `int32_t isoshim_escape(void)` | 1: a field was open. |
+| `int32_t isoshim_link_up(void)` | The link is up (again): the terminal's address claim again (once it has an address), and a request for every address claim. 1: sent. |
 | `isoshim_test_implement`, `isoshim_test_masks`, `isoshim_test_show`, `isoshim_test_send` | The self-test's implement on channel 1. Not for hosts. |
 
 `isoshim_host` holds the callbacks (`send`, `event` and `message` required; `image`, `save`,

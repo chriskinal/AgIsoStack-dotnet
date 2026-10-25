@@ -136,6 +136,12 @@ ISOSHIM_API int32_t isoshim_set_string(uint16_t objectId, const char *utf8, int3
 // Abandon the open field (VT ESC). 1: one was open.
 ISOSHIM_API int32_t isoshim_escape(void);
 
+// The link to the bus is up (again): the terminal sends its own address claim again (if it has
+// an address) and asks every control function for theirs. Both can go out at start before the
+// link is up and be lost: implements then ignore a terminal they don't know, and the terminal
+// ignores implements it never heard claim. 1: sent.
+ISOSHIM_API int32_t isoshim_link_up(void);
+
 #ifdef __cplusplus
 }
 #endif

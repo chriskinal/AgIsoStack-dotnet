@@ -234,6 +234,9 @@ public sealed unsafe class VirtualTerminal : IDisposable
                 held.Remove((button, id));
             }
             owed.Clear();
+            // The terminal's address claim again, and every implement's: claims sent while the
+            // link was down (at start, or during a cut) never crossed it.
+            isoshim_link_up();
             return 0;
         });
     }

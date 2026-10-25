@@ -203,6 +203,13 @@ public static class AowLinkTest
         // A soft key activation from the terminal for key 5000: function 0, code (1 pressed, 3 aborted), id 5000.
         static bool Key(byte[] frame, byte code) =>
             frame.Length >= 14 && frame[10] == 0x00 && frame[11] == code && frame[12] == 0x88 && frame[13] == 0x13;
+        // The terminal's address claim: PGN 0xEE00 from 0x26 to everyone.
+        static bool OwnClaim(byte[] frame) =>
+            frame.Length >= 10 && (BitConverter.ToUInt32(frame, 2) & 0x00FFFFFF) == 0x00EEFF26;
+        // A request for address claim to everyone: PGN 0xEA00 to 0xFF asking for PGN 0xEE00.
+        static bool ClaimRequest(byte[] frame) =>
+            frame.Length >= 13 && (BitConverter.ToUInt32(frame, 2) & 0x00FFFF00) == 0x00EAFF00
+            && frame[10] == 0x00 && frame[11] == 0xEE && frame[12] == 0x00;
 
         using var gateway = new FakeGateway();
         using var link = new AowLink("127.0.0.1", gateway.Port, "isoshim self-test");
@@ -238,6 +245,7 @@ public static class AowLinkTest
         {
             link.Start();
             Check("link up", await Until(() => ups == 1 && link.IsConnected, 2000));
+            Check("the bus is asked for address claims once the link is up", await Until(() => gateway.FromClient.Any(ClaimRequest), 2000));
             Check($"the gateway's HELLO: \"{info?.Name}\", {info?.Channels.FirstOrDefault()}", info?.Name == "fake"
                 && info.Channels.Count == 1 && info.Channels[0].Name == "fake0" && info.Channels[0].Bitrate == 250000);
             Check($"the client's name reached the gateway: \"{gateway.ClientName}\"", gateway.ClientName == "isoshim self-test");
@@ -262,7 +270,13 @@ public static class AowLinkTest
                 double took = t.Elapsed.TotalMilliseconds;
                 Check($"after {took:F0} ms (1 s of silence), reason timeout", took is > 900 and < 1600 && lastReason == LinkCloseReason.Timeout);
                 Check("the release while the link is down is lost", await vt.SoftKeyAsync(5000, KeyState.Released) && link.FramesDropped > 0);
+                int requests = gateway.FromClient.Count(ClaimRequest), cutAt = gateway.FromClient.Count;
                 Check("the link is back", await Until(() => ups == 2, 2000));
+                Check("and the bus is asked for address claims again", await Until(() => gateway.FromClient.Count(ClaimRequest) > requests, 2000));
+                // Its own claim before the request, not as an answer to some other request.
+                var sinceUp = gateway.FromClient.ToArray().Skip(cutAt).ToList();
+                int claimAt = sinceUp.FindIndex(OwnClaim), requestAt = sinceUp.FindIndex(ClaimRequest);
+                Check("and the terminal claims its address again first", claimAt >= 0 && claimAt < requestAt);
                 Check("the held key is aborted on the new link", await Until(() => gateway.FromClient.Any(f => Key(f, 3)), 2000));
 
                 // Busy twice, then let in: the client keeps trying.

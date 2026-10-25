@@ -73,8 +73,9 @@ offered to the Open-Agriculture project once it is a library rather than a spike
 4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
    (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.
-   Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Then offer
-   the wrapper.
+   Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Fixed
+   upstream by #805 (e932041, 2026-10-25), not yet in our pin: move it, with the self-test on the
+   Mac and both tablets. Then offer the wrapper.
 5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24).
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
@@ -142,7 +143,7 @@ optional, so an error should leave it connected). The C# class keeps pools in me
 gives no store; the raw interface with no save callback still answers "not stored". Fixed on the
 user's fork, branch `vt-client-store-version-error` (chriskinal/AgIsoStack-plus-plus, 853083b:
 the client goes on to Connected after any Store Version error; a test fails without it),
-offered upstream as [#804](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/804). Implements already built keep the old behaviour, so the in-memory default stays.
+offered upstream as [#804](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/804), merged 2026-10-25 (93a8623). Implements already built keep the old behaviour, so the in-memory default stays.
 
 **In the transport layer, threaded use** (found here 2026-10-25, chasing a double request-to-send
 on the bench; still in upstream HEAD e932041): `TransportProtocolManager::protocol_transmit_message`
@@ -157,7 +158,13 @@ RTSs in 4,000, each a failed transfer; with the direct call removed (the RTS lef
 none in 4,000, at about 3.5 ms a message. It bites any implement that sends from its own thread:
 `aow-hatd` (its ISOBUS thread) and upstream's examples (the VT client's worker), seen as a
 repeated upload of their pools. The wrapper runs the stack on one thread and never starts it.
-Not reported upstream yet.
+Reported 2026-10-25 as [#807](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/807),
+fixed in [#808](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/808) (fork branch
+`transport-transmit-race`): the first frame is checked again and sent under the sessions lock, so
+the immediate send stays and one thread sends it; ETP gets TP's lock on its session list. Two
+threaded unit tests fail without it (at least one in each of 5 runs) and pass with it; `tp_race`
+on vcan: none in 4,000, at the same speed. AgOpenWeb-HAT carries it as a patch from 0.2.27; the
+bench's example implements are built without it and can still double an RTS.
 
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one

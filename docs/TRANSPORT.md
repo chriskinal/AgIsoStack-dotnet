@@ -44,7 +44,7 @@ roaming. Sequence numbers and retransmission over UDP would rebuild TCP. Cannell
 UDP) was considered for this reason and set aside.
 
 **TCP fits.** Reliable and ordered, like CAN. A lost packet delays what is behind it until it is
-resent, tens to a few hundred milliseconds, which the ISOBUS timers allow (section 5); a stall
+resent, tens to a few hundred milliseconds, which the ISOBUS timers allow (section 6); a stall
 long enough to break them would break UDP as badly. Bandwidth is trivial: a full 250 kbit/s bus
 is about 1,800 frames/s, about 30 kB/s. The group members who own SolSteer's module say it uses
 TCP.
@@ -73,7 +73,7 @@ an ESP32 gains nothing.
 7. **Nothing queued while nobody is connected.** The bench relay drains the bus on accept, so a
    new client does not get old frames. Keep that.
 8. **One client at a time to start**; say what a second gets (refused, or listen-only).
-9. **Reconnect.** A client reconnects on its own after a drop; untested so far (section 6).
+9. **Reconnect.** A client reconnects on its own after a drop; untested so far (section 7). Section 5 answers 1 to 9.
 
 ## 4. Existing protocols
 
@@ -94,11 +94,127 @@ an ESP32 gains nothing.
 
   No hello, bus status or version yet. It is the measured starting point, not a specification.
 
-Proposed earlier: a small protocol of our own, documented and MIT so any gateway can implement
-it, with GVRET left as it is for SavvyCAN. Open: own protocol or GVRET with additions; decide with
-the ESP32 gateway in view.
+**Decided 2026-10-24: our own protocol (section 5), GVRET left as it is for SavvyCAN.** GVRET is
+the wrong shape: it is a command set for a sniffer and its PC tool, where we need a link with a
+lifetime (a hello, a heartbeat, a rule for when it is dead) and a bus status. Every one of those
+would be an addition only our own gateways and clients understood, and the GVRET servers we have
+would need changing to transmit anyway, so the compatibility it seems to offer is not there.
 
-## 5. The timers that matter (ISO 11783-3 and -6)
+## 5. The protocol, version 1 (proposed 2026-10-24, not yet built)
+
+A small binary protocol over one TCP connection, MIT, written so an ESP32 can implement it in a
+few hundred lines. Working name: **CAN link** (the name is the user's call). The bench relay's
+format (section 4) is its starting point.
+
+### The connection
+
+- **TCP, `TCP_NODELAY`**, default port 2323 (the bench's). The gateway listens; the application
+  (the client) connects. Everything waiting to be sent goes out in one write, never held for a
+  timer.
+- **Messages**, little-endian, back to back on the stream:
+
+  | Field | Size | |
+  |---|---|---|
+  | `type` | u8 | below |
+  | `len` | u8 | bytes of body that follow |
+  | body | `len` | |
+
+  A receiver skips a type it does not know, by `len`. New messages can be added that way without
+  a new version; a change to an existing message is a new version.
+- **Hello first.** The client sends HELLO; the gateway answers with its HELLO, or with CLOSE and
+  closes. Nothing else is sent before the two HELLOs. A gateway that has no HELLO 2 s after
+  accepting closes the connection.
+- **Versions must match.** There is no installed base and no fallback: a peer that speaks another
+  version gets CLOSE (version).
+
+### The link is dead after 1 second of silence
+
+Each side sends HEARTBEAT every 100 ms, whatever else it sends. **A side that has received
+nothing for 1,000 ms closes the connection at once, discarding what it has not yet sent**
+(`SO_LINGER` 0, so the kernel drops its send buffer), and the client starts a new one.
+
+That one rule is also the stale-frame limit (section 3, item 6), with no clock shared between
+the two ends. Frames and heartbeats travel in one ordered stream, so a frame held up by a stall
+holds up the heartbeats behind it. A stall shorter than 1 s is passed through: everything arrives
+up to 1 s late, which the ISOBUS timers allow (section 6). A stall of 1 s or more ends the
+connection on both sides, and what it held is never delivered. On the bench a cut of 1 s or more
+aborted an upload anyway, so nothing that could have survived is lost. A frame never reaches the
+bus or the terminal more than about 1.1 s after it was sent.
+
+**Reconnecting.** The client connects again at once, then every 250 ms until it gets in. A new
+connection starts clean: the gateway drops whatever was queued from the bus before it, and the
+client sends nothing that was meant for the old one.
+
+### Messages
+
+| Type | Name | Direction | Body |
+|---|---|---|---|
+| `0x01` | HELLO | both, first | `magic:4` (`CANL`), `version:u8` (1), `role:u8`, `name:str`; from the gateway also `channels:u8` and per channel `bitrate:u32` (bit/s), `flags:u8` (bit 0 listen-only), `name:str` |
+| `0x02` | FRAME | both | `channel:u8`, `flags:u8` (bit 0 extended 29-bit id), `id:u32`, `time:u32`, `data:0..8` (the rest of the body) |
+| `0x03` | HEARTBEAT | both, every 100 ms | `time:u32` (sender's clock, ms), `echo:u32` (the `time` of the last HEARTBEAT received), `held:u16` (ms between receiving that one and sending this) |
+| `0x04` | STATUS | gateway | `channel:u8`, `state:u8`, `txErrors:u8`, `rxErrors:u8`, `rxDropped:u32`, `txDropped:u32` |
+| `0x05` | CLOSE | both, last | `reason:u8`, `text:str` |
+
+`str` is `length:u8` and that many bytes of UTF-8.
+
+- **HELLO.** `role` from a client: 0 control (sends and receives frames), 1 monitor (receives
+  only). From the gateway: 0. `name` identifies the sender for logs ("AgOpenWeb 1.4 on Galaxy Tab",
+  "AOW HAT CM4 hatcan2"). The gateway's channels are numbered from 0 in the order listed.
+- **FRAME.** `time` from the gateway is the bus receive time in microseconds on the gateway's own
+  clock (kernel timestamp where there is one; wraps after about 71 minutes): for spacing and
+  logs, never compared with the client's clock. From the client, 0. 2 + 10 + 8 = 20 bytes for a
+  full frame on the wire; a saturated 250 kbit/s bus is about 1,800 frames/s, 36 kB/s.
+- **HEARTBEAT.** Round trip = now − `echo` − `held`, on the receiver's own clock, so both ends
+  measure it with no clock in common (the bench's ping, made symmetric).
+- **STATUS**, per channel: after the gateway's HELLO, on any change of `state`, and every 1 s.
+  `state` 0 error active, 1 error warning, 2 error passive, 3 bus-off, 4 down (the interface is not
+  up). The error counters are the controller's. `rxDropped` counts frames lost before the gateway
+  read them (receive overflow), `txDropped` frames from the client the bus did not take: the
+  gateway keeps order and drops a frame not sent within 100 ms (bus-off, or no other node to
+  acknowledge it). Both count from the start of the connection.
+- **CLOSE** says why, then the sender closes: 1 version, 2 busy, 3 timeout (silence), 4 protocol
+  error, 5 shutting down. A side closing on silence may send it but cannot count on it arriving.
+
+### Clients
+
+- **One control client.** While one is connected, another control client gets CLOSE (busy). A
+  dead one is closed by the gateway within 1 s, so the same application reconnecting after a drop
+  gets in within about a second.
+- **Monitors are optional.** A gateway may accept any number (a logger, a diagnostics page), or
+  refuse them with CLOSE (busy). A monitor gets every FRAME both ways and STATUS; a FRAME from a
+  monitor is a protocol error.
+
+### What each end does around the link
+
+- **The gateway** knows nothing of ISOBUS. It passes frames, drains the bus when a control client
+  connects, sends nothing to the bus while none is connected, and reports STATUS.
+- **The terminal** keeps the stack running while the link is down (the implements decide, by
+  their 3 s timeouts) and drops what it sends meanwhile. A key or button the operator held when
+  the link went is released (aborted) when it comes back, if that implement is still connected:
+  a press is always followed by a release. The operator sees that the bus is gone.
+
+### Finding a gateway
+
+The address is configured (an ESP32 on its own access point has a fixed one; AgOpenWeb on the CM4
+uses loopback). A gateway may also announce itself by DNS-SD as `_canlink._tcp`, TXT `v=1`.
+
+### Security
+
+None in version 1. Anyone who can reach the port can put frames on the implement's bus, so a
+gateway listens only where the network is the user's: loopback, a cable, or its own WPA2 access
+point. A pairing key in HELLO is open (section 7) before a gateway joins a shared network.
+
+### Built against it
+
+- **The client**, in this repository's package beside `VirtualTerminal`: connect, hello,
+  heartbeat, reconnect, frames to and from the terminal, the link's state as events.
+- **The reference gateway**: the bench relay brought up to version 1 (Python first, as now; C++
+  for Linux once settled). The bench tests it: cuts below and above 1 s, reconnect mid-upload, a
+  second client, bus-off.
+- **The HAT's gateway service** in AgOpenWeb-HAT (its `docs/PLAN_VT.md`), and later the ESP32
+  gateway.
+
+## 6. The timers that matter (ISO 11783-3 and -6)
 
 | Timer | Limit | Measured worst (docs/RESULTS.md) |
 |---|---|---|
@@ -110,12 +226,12 @@ the ESP32 gateway in view.
 Each batch of a transfer costs one round trip, so the implement's packets per DPO decides upload
 time over a link: about 84 batches at 255 for a 150 kB pool, about 1,340 at the stack's default 16.
 
-## 6. Open
+## 7. Open
 
-1. Own protocol or GVRET with additions (section 4).
-2. The stale-frame limit and the held-button release (section 3).
-3. **Disconnect and reconnect mid-upload and in use**: the bench client does not reconnect yet;
-   the cuts so far kept TCP up.
+1. Version 1 above, for the user's approval: the 1 s silence rule, the port, the name.
+2. A pairing key in HELLO, for gateways on networks that are not the user's own.
+3. **Disconnect and reconnect mid-upload and in use**: to test once the client reconnects (the
+   bench client does not yet).
 4. What the gateway does with a second client.
 5. Tablet power saving: it can hold packets for a few hundred milliseconds whatever the transport.
 6. The field's worst case is not the bench's: a metal cab, a tablet behind glass, an ESP32's

@@ -29,6 +29,14 @@ offered to the Open-Agriculture project once it is a library rather than a spike
   in-process upload and pays a link round trip per 16 frames.
 - **Upstream HEAD.** The pin in `native/CMakeLists.txt` follows upstream; upstream fixes not yet
   merged ride as patches until they are (none needed by the shim today).
+- **Several terminals in one stack** (2026-10-25): a cab can have two or more VTs, each an
+  implement's chosen display (a sprayer on one, its boom levelling on another, both worked at
+  once). The standard way is several terminals on the bus, each with its own NAME (function
+  instance) and address, and each implement choosing one; so the stack runs one to four, each
+  with its own screen, events and calls (`VirtualTerminalStack.Terminals`). Not several screens of
+  one terminal: one terminal has one active implement, and implements may ignore input while not
+  active. One stack per process still (the network manager is one); the terminals share the
+  stepping thread, the bus, and the pool store.
 - **MIT**, so it can go upstream unchanged. The user intends to offer it to Open-Agriculture.
 
 ## Known costs
@@ -135,6 +143,8 @@ upstream pull request with a test; the wrapper's terminal will meet them.
 | 7 | A long ETP stream during an upload is drained in one pass, starving other work (espVT: at most 32 per pass) | not seen on the bench |
 | 8 | The implement's ESC command (0x92) is not handled: an open field is not closed and no answer is sent. The wrapper answers it from its own listener (found here, 2026-10-24) | input |
 | 9 | Sending a second multi-frame message to an implement while the last one is closing fails (one session per pair); the server's own sends do not retry. The wrapper queues the operator's messages (`Terminal::post`) (found here, 2026-10-24) | input |
+| 11 | The server takes every implement message addressed to any of the process's own control functions (the network manager's any-function callbacks), not only its own: with two terminals in one process each answers and takes on the other's implements, and neither screen comes up. The wrapper swaps upstream's listener for one that passes only messages to its own terminal or to everyone (`Terminal::listen`; the two-terminal self-test fails without it) (found here, 2026-10-25) | several terminals |
+| 12 | Identify VT is handled only from a connected implement (in the connection-dependent messages), and `identify_vt` only logs; an implement asks while the operator is choosing a terminal, before it connects, and gets a NACK. The wrapper answers it for every implement from its own listener and passes `identify` to the host (found here, 2026-10-25) | several terminals |
 | 10 | The pool parser checks an alarm mask's acoustic signal but never stores it (`set_signal_priority` is not called), so every alarm mask reports signal 0, the highest (found here, 2026-10-24; fixed upstream with the enum, which numbered lowest 3 and none 4: [#803](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/803), merged 2026-10-24, in the pin since) | alarms |
 
 **In the VT client** (the implements' side, which aow-hatd and the example implement use):

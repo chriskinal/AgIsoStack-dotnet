@@ -4,56 +4,66 @@ Everything a host can call and everything it receives: the C# package `AgIsoStac
 the JSON messages and the draw list, and the C interface under them (`native/isoshim.h`). How to
 use them together is in [GUIDE.md](GUIDE.md).
 
-Contents: [VirtualTerminal](#virtualterminal) · [Options](#virtualterminaloptions) ·
-[Types](#types) · [Pool stores](#pool-stores) · [AowLink](#aowlink) · [Messages](#messages) ·
-[The draw list](#the-draw-list) · [The C interface](#the-c-interface) · [Design](#design)
+Contents: [VirtualTerminalStack](#virtualterminalstack) · [VirtualTerminal](#virtualterminal) ·
+[Options](#virtualterminaloptions) · [Types](#types) · [Pool stores](#pool-stores) ·
+[AowLink](#aowlink) · [Messages](#messages) · [The draw list](#the-draw-list) ·
+[The C interface](#the-c-interface) · [Design](#design)
 
 All types are in namespace `AgIsoStack`; the raw interface is `AgIsoStack.Interop.IsoShim`.
 
-## VirtualTerminal
+## VirtualTerminalStack
 
-`public sealed class VirtualTerminal : IDisposable`. An ISOBUS virtual terminal (server). It owns
-one thread, which runs the stack and raises every event and every store call, in order. Calls may
-come from any thread; from that thread (a handler) they run at once. One per process.
-
-### Life
+`public sealed class VirtualTerminalStack : IDisposable`. The stack: one to four ISOBUS virtual
+terminals (servers) on one bus, as several displays in one cab, each with its own NAME and
+address; every implement connects to the terminal it chooses (usually set in its own menu). It
+owns one thread, which runs the stack and raises every event and every store call, in order.
+Calls may come from any thread; from that thread (a handler) they run at once. One per process.
 
 | Member | |
 |---|---|
-| `VirtualTerminal(VirtualTerminalOptions options)` | Throws `ArgumentException` if `options.Send` is null. |
-| `void Start()` | Starts the terminal on its own thread; returns when it is running. Throws `InvalidOperationException` if another terminal is running in this process or the native library refuses the options. A stopped terminal can be started again. |
-| `void Stop()` | Takes the terminal off the bus and ends its thread, waiting for any pool still parsing. Calls not yet done fail. From the terminal's own thread it only asks: the terminal stops after the current step. Safe at any point; does nothing if not running. |
+| `VirtualTerminalStack(VirtualTerminalOptions options)` | Makes the terminals (subscribe to their events before `Start`). Throws `ArgumentException` if `options.Send` is null or `options.Count` is outside 1 to 4. |
+| `IReadOnlyList<VirtualTerminal> Terminals` | By position: the first has function instance `FunctionInstance` and address `PreferredAddress` (0x26), the next one more of each, and so on. |
+| `void Start()` | Starts the terminals on the stack's own thread; returns when they are running. Throws `InvalidOperationException` if another stack is running in this process or the native library refuses the options. A stopped stack can be started again. |
+| `void Stop()` | Takes the terminals off the bus and ends the thread, waiting for any pool still parsing. Calls not yet done fail. From the stack's own thread it only asks: it stops after the current step. Safe at any point; does nothing if not running. |
 | `void Dispose()` | `Stop()`. |
 | `bool IsRunning` | |
-| `int Address` | The terminal's address on the bus, -1 before it has claimed one. |
+| `void Receive(uint id, ReadOnlySpan<byte> data, bool extended = true, int channel = 0)` | A frame from the bus. Any thread; returns at once. At most 8 bytes (`ArgumentException`). |
+| `void LinkDown()` | The link to the bus is gone. Any thread. |
+| `void LinkUp()` | The link is up (again): every soft key or button held when it went, or pressed while it was down, is sent as aborted, each terminal's address claim is sent again, and the bus is asked for every address claim, so the terminals and the implements already on it know each other. Any thread. |
+| `Task<T> InvokeAsync<T>(Func<T> call)` | Runs `call` on the stack's thread between steps: for the raw interface, which belongs to that thread. |
+| `event Action<Exception> HandlerFailed` | A handler, `Send` or the store threw; the stack carries on. |
 
-### Frames
+Frames out go through `VirtualTerminalOptions.Send`. `AowLink`'s `Attach` makes the frame and link
+calls for you.
+
+## VirtualTerminal
+
+`public sealed class VirtualTerminal`. One terminal of a stack (`stack.Terminals[i]`): what one
+display shows, and the operator's input on it. Its implements are the ones that chose it.
 
 | Member | |
 |---|---|
-| `void Receive(uint id, ReadOnlySpan<byte> data, bool extended = true, int channel = 0)` | A frame from the bus. Any thread; returns at once. At most 8 bytes (`ArgumentException`). |
-| `void LinkDown()` | The link to the bus is gone. Any thread. |
-| `void LinkUp()` | The link is up (again): every soft key or button held when it went, or pressed while it was down, is sent as aborted, the terminal's address claim is sent again, and the bus is asked for every address claim, so the terminal and the implements already on it know each other. Any thread. |
-
-Frames out go through `VirtualTerminalOptions.Send`. `AowLink`'s `Attach` makes all of these calls for you.
+| `VirtualTerminalStack Stack`, `int Index` | Its stack and its position there, from 0. |
+| `int Address` | Its address on the bus, -1 before it has claimed one. |
+| `bool IsRunning` | The stack's. |
 
 ### The operator
 
 All of these return a task that completes once the terminal has acted. It fails with
-`InvalidOperationException` if the terminal is not running. Object ids are in the shown
-implement's pool.
+`InvalidOperationException` if the stack is not running. Object ids are in the pool of the
+implement this terminal shows.
 
 | Member | Result |
 |---|---|
 | `Task<bool> SoftKeyAsync(ushort objectId, KeyState state)` | A Key object in the shown soft key mask. True: sent. |
 | `Task<bool> ButtonAsync(ushort objectId, KeyState state)` | A Button object on the shown mask. True: sent. |
-| `Task<bool> ActivateAsync(ulong name)` | Shows this implement. True: it is now the one shown. |
+| `Task<bool> ActivateAsync(ulong name)` | Shows this implement (one connected to this terminal). True: it is now the one shown. |
 | `Task<bool> SelectAsync(ushort objectId, bool open)` | Gives an input field or button the focus; `open`: an editor is up for it (an `edit` message follows). True: done. |
 | `Task<bool> DeselectAsync()` | Gives nothing the focus. |
 | `Task<InputResult> SetNumberAsync(ushort objectId, uint value)` | Input number (raw value, before offset and scale), input boolean (0 or 1), input list (the index). Selects the field first if needed; closes it. |
 | `Task<InputResult> SetStringAsync(ushort objectId, string text)` | Input string. |
 | `Task<bool> EscapeAsync()` | Abandons the open field (VT ESC). True: one was open. |
-| `Task<T> InvokeAsync<T>(Func<T> call)` | Runs `call` on the terminal's thread between steps: for the raw interface, which belongs to that thread. |
+| `Task<T> InvokeAsync<T>(Func<T> call)` | The stack's. |
 
 `KeyState`: `Pressed` (1), `Held` (2, repeat about every 200 ms while down: the host repeats it),
 `Released` (0), `Aborted` (3, the press ended without a release). A press must end in a release or
@@ -64,34 +74,36 @@ unchanged and stays open), `NotAnInput` (0, not an enabled input on the shown sc
 
 ### Events
 
-All on the terminal's thread.
+All on the stack's thread, each for this terminal only.
 
 | Event | |
 |---|---|
 | `Action<string> Message` | Every [message](#messages), as JSON. |
-| `Action<VtImage> Image` | A picture, once, before the first screen that refers to it. |
+| `Action<VtImage> Image` | A picture, once, before the first screen that refers to it. Ids are unique across the stack's terminals. |
 | `Action<ulong?, IReadOnlyList<WorkingSetInfo>> WorkingSetsChanged` | The shown implement's NAME (null: none) and every implement connected. From the `workingSets` message. |
 | `Action<IReadOnlyList<AlarmInfo>> AlarmsChanged` | Every implement showing an alarm mask, shown or not. From `alarms`. |
 | `Action<AudioSignal> Audio` | Control Audio Signal from an implement. From `audio`. |
 | `Action<ulong, int> Volume` | Set Audio Volume: the implement's NAME and the percentage. From `volume`. |
+| `Action Identify` | An implement asked this terminal, or every terminal, to show its number (Identify VT): show it for about 3 s. From `identify`. |
 | `Action<int> AddressClaimed` | The terminal has this address. |
 | `Action<int, int> PoolLoaded` | An implement's pool is up: its address, the number of objects. |
 | `Action<int, int> PoolRejected` | An implement's pool was refused: its address, the object at fault. |
 | `Action<int, int> ImplementLost` | An implement went away: its address, the reason (0 no maintenance message for 3 s, 1 it started over). |
-| `Action<Exception> HandlerFailed` | A handler, `Send` or the store threw; the terminal carries on. |
 
 ## VirtualTerminalOptions
 
 `public sealed class VirtualTerminalOptions`, init-only properties. Zero (or null) takes the default.
+The terminal settings are each terminal's.
 
 | Property | Type | Default | |
 |---|---|---|---|
-| `Send` | `FrameSender` | required | `delegate void FrameSender(int channel, uint id, ReadOnlySpan<byte> data, bool extended)`. Called on the terminal's thread; the span is valid only during the call. Queue and return. |
-| `Store` | `IPoolStore?` | `MemoryPoolStore` | Pool versions. |
+| `Send` | `FrameSender` | required | `delegate void FrameSender(int channel, uint id, ReadOnlySpan<byte> data, bool extended)`. Called on the stack's thread; the span is valid only during the call. Queue and return. |
+| `Store` | `IPoolStore?` | `MemoryPoolStore` | Pool versions, one store for every terminal (an implement moved to another terminal finds its versions there). |
+| `Count` | `int` | 1 | Terminals, 1 to 4. |
 | `Identity` | `uint` | 3 | NAME identity number (21 bits). |
 | `Manufacturer` | `ushort` | 1407 | NAME manufacturer code (11 bits). |
-| `FunctionInstance` | `byte` | 0 | NAME function instance. |
-| `PreferredAddress` | `byte` | 0x26 | The address claimed first. |
+| `FunctionInstance` | `byte` | 0 | NAME function instance of the first terminal; the next has one more, and so on. |
+| `PreferredAddress` | `byte` | 0x26 | The address the first terminal claims first; the next one more, and so on. |
 | `MaskWidth`, `MaskHeight` | `ushort` | 480 | Data mask in pixels. |
 | `KeyWidth`, `KeyHeight` | `byte` | 80 | Soft key in pixels. |
 | `PhysicalKeys` | `byte` | 6 | Soft keys shown at once. |
@@ -99,9 +111,9 @@ All on the terminal's thread.
 | `NavigationKeys` | `byte` | 0 | |
 | `Version` | `byte` | 5 | VT version, 3 to 6. |
 | `SmallFonts`, `LargeFonts` | `byte` | 0xFF | Supported font bitfields (Get Text Font Data). |
-| `PacketsPerCts` | `byte` | 255 | Frames per clear-to-send and per DPO, received and sent. |
-| `StepMilliseconds` | `int` | 5 | Longest gap between steps; an arriving frame or call wakes the terminal at once. |
-| `Log` | `Action<int, string>?` | none | The stack's log: level (0 debug .. 4 critical), text. From the terminal's thread and a pool's parsing thread. |
+| `PacketsPerCts` | `byte` | 255 | Frames per clear-to-send and per DPO, received and sent; one for the bus. |
+| `StepMilliseconds` | `int` | 5 | Longest gap between steps; an arriving frame or call wakes the stack at once. |
+| `Log` | `Action<int, string>?` | none | The stack's log: level (0 debug .. 4 critical), text. From the stack's thread and a pool's parsing thread. |
 | `LogLevel` | `int` | 2 | Lowest level passed to `Log`. |
 
 ## Types
@@ -118,8 +130,8 @@ All on the terminal's thread.
 ## Pool stores
 
 `public interface IPoolStore`. Pool versions, keyed by the implement's NAME and its version label
-(7 bytes, or 32 for VT 5 and 6 extended labels; the two lengths are separate versions). Called on
-the terminal's thread: keep it quick. An exception counts as a failure and goes to `HandlerFailed`.
+(7 bytes, or 32 for VT 5 and 6 extended labels; the two lengths are separate versions). One store for
+every terminal. Called on the stack's thread: keep it quick. An exception counts as a failure and goes to `HandlerFailed`.
 
 | Method | |
 |---|---|
@@ -169,14 +181,14 @@ the link's own thread.
 | `enum LinkCloseReason { Lost, Version, Busy, Timeout, ProtocolError, ShuttingDown }` | `Busy`: the gateway has a control client already. `Timeout`: nothing heard for 1 s. |
 | `enum LinkRole { Control, Monitor }` | |
 
-`static void VirtualTerminalLink.Attach(this VirtualTerminal terminal, AowLink link)`: frames from
-the link to `Receive`, `Connected` to `LinkUp`, `Disconnected` to `LinkDown`. The terminal's frames
-go out by its options: `Send = link.Send`.
+`static void VirtualTerminalLink.Attach(this VirtualTerminalStack stack, AowLink link)`: frames from
+the link to `Receive`, `Connected` to `LinkUp`, `Disconnected` to `LinkDown`. The terminals' frames
+go out by the options: `Send = link.Send`.
 
 ## Messages
 
-`VirtualTerminal.Message` (and the C `message` callback): one JSON object per call, UTF-8, `"type"`
-first. NAMEs are 16 hex digits. Unknown fields may be added later; ignore them.
+`VirtualTerminal.Message` (and the C `message` callback, under its terminal): one JSON object per
+call, UTF-8, `"type"` first; each about the terminal it came from. NAMEs are 16 hex digits. Unknown fields may be added later; ignore them.
 
 ### `screen`
 
@@ -241,6 +253,17 @@ known. Sent when the list, a state, the shown implement, or the progress in whol
 changes. The terminal doesn't switch implements for an alarm. `audio`: Hz and ms; `activations` 0
 stops a sounding signal.
 
+### `identify`
+
+```json
+{"type":"identify"}
+```
+
+An implement asked this terminal, or every terminal, to show its number (Identify VT, from an
+implement connected or not): show it for about 3 s, so the operator can tell the terminals apart
+when choosing one in the implement's settings. The number shown is the host's to choose (the
+function instance, or the position plus one).
+
 ## The draw list
 
 Pixels in the area being drawn (the mask, a key, a list option), origin top left; the painter
@@ -272,7 +295,7 @@ objects, VT 6 window masks and key groups.
 `native/isoshim.h`, for hosts not in .NET (the C# package is built on it; `AgIsoStack.Interop.IsoShim`
 declares it for P/Invoke, callbacks as `[UnmanagedCallersOnly]` function pointers, as iOS AOT
 requires). Library `isoshim` (`libisoshim.dylib`, `.so`, `isoshim.dll`; on iOS the static
-`libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 5.
+`libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 6.
 
 **Threading.** The stack runs on the thread that calls `isoshim_step` and nowhere else. Every
 function except `isoshim_receive` and `isoshim_set_log`, and every callback except the log, belongs
@@ -280,21 +303,26 @@ to that thread. `isoshim_receive` may be called from any thread: it queues the f
 step. Call `isoshim_step` every few milliseconds (a multi-frame transfer moves one step per
 clear-to-send).
 
+**Terminals.** `isoshim_vt_start` starts one to `ISOSHIM_MAX_TERMINALS` (4) terminals, all on
+channel 0. Every call for one terminal takes its position (`terminal`, 0 first), and every callback
+that concerns one names it. Each answers only the implements that address it, and those that
+address everyone.
+
 | Function | |
 |---|---|
-| `int32_t isoshim_vt_start(const isoshim_vt_config *, const isoshim_host *)` | 0 started; -1 bad arguments; -2 already running. Zero config fields take the defaults above. |
-| `void isoshim_step(void)` | Queued frames in, timers, frames out, the screen if it changed. |
+| `int32_t isoshim_vt_start(const isoshim_vt_config *configs, int32_t count, const isoshim_host *)` | `count` terminals. 0 started; -1 bad arguments (`count` outside 1 to 4, two with the same NAME); -2 already running. Zero config fields take the defaults above, except `function_instance` (as given: give each terminal its own) and `preferred_address` (0x26 plus the position); `packets_per_cts` is the first terminal's, for the bus. |
+| `void isoshim_step(void)` | Queued frames in, timers, frames out, the screens that changed. |
 | `void isoshim_stop(void)` | Safe at any point, including mid-parse; `isoshim_vt_start` may follow. |
-| `void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t len, int32_t extended)` | Any thread. The terminal is channel 0. |
+| `void isoshim_receive(int32_t channel, uint32_t id, const uint8_t *data, int32_t len, int32_t extended)` | Any thread. The terminals are channel 0. |
 | `void isoshim_reply(const uint8_t *data, int32_t len)` | From inside `load` (the pool) or `list` (each label): copied. |
 | `void isoshim_set_log(isoshim_log_fn, int32_t level)` | |
-| `int32_t isoshim_soft_key(uint16_t id, int32_t state)`, `isoshim_button(...)` | 1: sent. |
-| `int32_t isoshim_activate(uint64_t name)` | 1: now shown. |
-| `int32_t isoshim_select(uint16_t id, int32_t open)` | 0xFFFF selects nothing. 1: done. |
-| `int32_t isoshim_set_number(uint16_t id, uint32_t value)`, `isoshim_set_string(uint16_t id, const char *utf8, int32_t len)` | 1 entered, -1 invalid, 0 not an input. |
-| `int32_t isoshim_escape(void)` | 1: a field was open. |
-| `int32_t isoshim_link_up(void)` | The link is up (again): the terminal's address claim again (once it has an address), and a request for every address claim. 1: sent. |
-| `isoshim_test_implement`, `isoshim_test_masks`, `isoshim_test_show`, `isoshim_test_send` | The self-test's implement on channel 1. Not for hosts. |
+| `int32_t isoshim_soft_key(int32_t terminal, uint16_t id, int32_t state)`, `isoshim_button(...)` | 1: sent. |
+| `int32_t isoshim_activate(int32_t terminal, uint64_t name)` | 1: now shown. |
+| `int32_t isoshim_select(int32_t terminal, uint16_t id, int32_t open)` | 0xFFFF selects nothing. 1: done. |
+| `int32_t isoshim_set_number(int32_t terminal, uint16_t id, uint32_t value)`, `isoshim_set_string(int32_t terminal, uint16_t id, const char *utf8, int32_t len)` | 1 entered, -1 invalid, 0 not an input. |
+| `int32_t isoshim_escape(int32_t terminal)` | 1: a field was open. |
+| `int32_t isoshim_link_up(void)` | The link is up (again): each terminal's address claim again (once it has an address), and a request for every address claim. 1: sent. |
+| `isoshim_test_implement(terminal, pool, len)`, `isoshim_test_masks(terminal, ids, max)`, `isoshim_test_show(implement, mask)`, `isoshim_test_send(implement, data, len, global)` | The self-test's implements on channel 1, each partnered to one terminal. Not for hosts. |
 
 `isoshim_host` holds the callbacks (`send`, `event` and `message` required; `image`, `save`,
 `load`, `list`, `remove` optional: a missing store callback means nothing is stored).
@@ -302,9 +330,9 @@ clear-to-send).
 | Callback | |
 |---|---|
 | `send(channel, id, data, len, extended)` | A frame out. It may call `isoshim_receive`. |
-| `event(kind, a, b)` | `ISOSHIM_SERVER_ADDRESS` (a: address), `ISOSHIM_POOL_OK` (a: objects, b: address), `ISOSHIM_POOL_BAD` (a: faulty object, b: address), `ISOSHIM_MASK` (a: mask shown, b: address), `ISOSHIM_PARSE_START` (b: address), `ISOSHIM_WS_SHUTDOWN` (a: reason, b: address), `ISOSHIM_ACTIVE` (a: address shown, -1 none). |
-| `message(json, len)` | A [message](#messages); the text is valid during the call. |
-| `image(id, width, height, rgba)` | |
+| `event(terminal, kind, a, b)` | `ISOSHIM_SERVER_ADDRESS` (a: address), `ISOSHIM_POOL_OK` (a: objects, b: address), `ISOSHIM_POOL_BAD` (a: faulty object, b: address), `ISOSHIM_MASK` (a: mask shown, b: address), `ISOSHIM_PARSE_START` (b: address), `ISOSHIM_WS_SHUTDOWN` (a: reason, b: address), `ISOSHIM_ACTIVE` (a: address shown, -1 none). |
+| `message(terminal, json, len)` | A [message](#messages); the text is valid during the call. |
+| `image(terminal, id, width, height, rgba)` | Once per terminal; ids unique across the terminals. |
 | `save(name, label, labelLen, data, len, append)` | 1: saved. |
 | `load(name, label, labelLen)` | Reply with the pool, return 1; 0: none. |
 | `list(name, labelLen)` | One reply per label. |

@@ -160,6 +160,19 @@ pool store the terminal answered Store Version with an error, and upstream's VT 
 resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
 now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).
 
+## 2026-10-25: two terminals in AgOpenWeb, on the bench
+
+AgOpenWeb (Mac, Desktop head) with `VtCount` 2, through `aow-linkd` on the CM4 (hatcan2, reached
+by an ssh tunnel), one VT card for each terminal. On the bus: `aow-hatd`'s implement (0xF7), and
+upstream's VT example (0x80, `VT3Example255` built with `vt-instance.patch`, `VT_INSTANCE=1`).
+
+- The terminals claimed 0x26 and 0x27 (function 29, instances 0 and 1); `aow-hatd`'s network page
+  lists both.
+- `aow-hatd` connected to the first terminal (it takes the first VT it finds), the example to the
+  second; each card showed its implement, with no implement picker (one each).
+- With control in one browser, a soft key on each card in turn: `aow-hatd` changed page on VT 1
+  and the example showed its alarm mask on VT 2, neither card disturbed by the other.
+
 ## 2026-10-25: the HAT's gateway, `aow-linkd`
 
 AgOpenWeb-HAT's C++ gateway (0.2.24, its `docs/PLAN_VT.md` section 2) as a service on the CM4, in

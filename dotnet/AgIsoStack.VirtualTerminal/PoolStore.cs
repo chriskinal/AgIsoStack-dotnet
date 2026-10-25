@@ -8,9 +8,9 @@ using System.Linq;
 
 namespace AgIsoStack;
 
-/// <summary>Where the terminal keeps pool versions. Called on the terminal's thread; keep it
+/// <summary>Where the terminals keep pool versions (one store for all). Called on the stack's thread; keep it
 /// quick (the bus waits). An exception counts as a failure and is reported through
-/// <see cref="VirtualTerminal.HandlerFailed"/>.</summary>
+/// <see cref="VirtualTerminalStack.HandlerFailed"/>.</summary>
 public interface IPoolStore
 {
     /// <summary>Stores a pool, or one part of it: a pool can come in several parts, the first

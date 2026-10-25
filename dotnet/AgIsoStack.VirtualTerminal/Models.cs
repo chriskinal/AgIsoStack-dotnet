@@ -6,24 +6,28 @@ using System.Text.Json;
 
 namespace AgIsoStack;
 
-/// <summary>Sends one CAN frame to the bus (the gateway). Called on the terminal's thread; queue
+/// <summary>Sends one CAN frame to the bus (the gateway). Called on the stack's thread; queue
 /// it and return.</summary>
 public delegate void FrameSender(int channel, uint id, ReadOnlySpan<byte> data, bool extended);
 
-/// <summary>The terminal's setup. A zero (or null) takes the default shown.</summary>
+/// <summary>The terminals' setup. A zero (or null) takes the default shown.</summary>
 public sealed class VirtualTerminalOptions
 {
-    /// <summary>Sends the terminal's frames. Required.</summary>
+    /// <summary>Sends the terminals' frames. Required.</summary>
     public FrameSender? Send { get; init; }
     /// <summary>Stored pools; none: kept in memory until the process ends. (A terminal that
     /// answers "not stored" costs the implement its connection: upstream's VT client, which most
     /// implements use, waits out the reply and resets.)</summary>
     public IPoolStore? Store { get; init; }
-    /// <summary>The terminal's NAME: identity number (3), manufacturer code (1407), function instance (0).</summary>
+    /// <summary>How many terminals, 1 to 4 (1): as several displays in one cab, each with its own
+    /// NAME and address. Settings below are each terminal's.</summary>
+    public int Count { get; init; }
+    /// <summary>The NAME: identity number (3), manufacturer code (1407), function instance (0, the
+    /// first terminal's; the next has one more, and so on).</summary>
     public uint Identity { get; init; }
     public ushort Manufacturer { get; init; }
     public byte FunctionInstance { get; init; }
-    /// <summary>The address it claims first (0x26).</summary>
+    /// <summary>The address the first terminal claims first (0x26; the next one more, and so on).</summary>
     public byte PreferredAddress { get; init; }
     /// <summary>The data mask in pixels (480 x 480).</summary>
     public ushort MaskWidth { get; init; }
@@ -39,13 +43,13 @@ public sealed class VirtualTerminalOptions
     /// <summary>Supported font bitfields (0xFF, 0xFF).</summary>
     public byte SmallFonts { get; init; }
     public byte LargeFonts { get; init; }
-    /// <summary>Frames per clear-to-send and per DPO, received and sent (255).</summary>
+    /// <summary>Frames per clear-to-send and per DPO, received and sent (255). One for the bus.</summary>
     public byte PacketsPerCts { get; init; }
     /// <summary>How often the stack runs, at most this many milliseconds apart (5). Frames that
     /// arrive wake it at once.</summary>
     public int StepMilliseconds { get; init; }
     /// <summary>The stack's log (level 0 debug .. 4 critical, text), from this level up. Called
-    /// from the terminal's thread and from a pool's parsing thread.</summary>
+    /// from the stack's thread and from a pool's parsing thread.</summary>
     public Action<int, string>? Log { get; init; }
     public int LogLevel { get; init; } = 2;
 }

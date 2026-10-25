@@ -4,6 +4,8 @@
 # and the same with 255 (VT3Example255, dpo255.patch). Both carry upstream PR #793
 # (pr793-transmit-queue.patch): without it the example's VT client thread and the stack's thread
 # both push to the single-producer transmit queue and frames are lost.
+# Both take VT_INSTANCE=n from the environment (vt-instance.patch): connect only to the terminal
+# with that function instance, for several terminals on one bus.
 #   bench/implement/build.sh [AGISOSTACK_COMMIT]
 # On a Mac, in an arm64 Linux container, for example:
 #   docker run --rm -v "$PWD":/src -w /src aow-hat-dev bench/implement/build.sh
@@ -16,6 +18,7 @@ if [ ! -d "$W/stack/.git" ]; then git clone -q https://github.com/Open-Agricultu
 cd "$W/stack"
 git checkout -q -f "$PIN"
 git apply "$HERE/pr793-transmit-queue.patch"
+git apply "$HERE/vt-instance.patch"
 cmake -S . -B "$W/build" -G "Unix Makefiles" -DBUILD_EXAMPLES=ON -DCAN_DRIVER=SocketCAN -DCMAKE_BUILD_TYPE=Release >/dev/null
 T=examples/virtual_terminal/version3_object_pool
 cmake --build "$W/build" -j"$(nproc)" --target VT3ExampleTarget

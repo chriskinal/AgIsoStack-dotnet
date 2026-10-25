@@ -239,7 +239,7 @@ std::string formatNumber(const NumberVTObject &n, std::uint32_t raw, int fieldCh
 struct Renderer::Pass {
 	WS &ws;
 	Json &json;
-	isoshim_image_fn image;
+	const ImageSink &image;
 	const std::map<std::uint16_t, std::shared_ptr<VTObject>> &tree;
 	std::uint16_t focus = NULL_OBJECT_ID; // the selected input, marked on its hit
 	bool open = false;                    // and whether it is open for input
@@ -347,7 +347,7 @@ struct Renderer::Pass {
 };
 
 std::string Renderer::screen(WS &ws, std::uint64_t name, std::uint16_t maskWidth, std::uint16_t maskHeight, std::uint8_t keyWidth,
-                             std::uint8_t keyHeight, std::uint16_t focus, bool open, isoshim_image_fn image) {
+                             std::uint8_t keyHeight, std::uint16_t focus, bool open, const ImageSink &image) {
 	Json json;
 	touchable_.clear();
 	Pass pass{ ws, json, image, ws.get_object_tree(), focus, open, &touchable_ };
@@ -410,7 +410,7 @@ std::string Renderer::screen(WS &ws, std::uint64_t name, std::uint16_t maskWidth
 }
 
 // The editor for one input field (docs/API.md, the edit message).
-std::string Renderer::edit(WS &ws, std::uint64_t name, std::uint16_t id, isoshim_image_fn image) {
+std::string Renderer::edit(WS &ws, std::uint64_t name, std::uint16_t id, const ImageSink &image) {
 	Json json;
 	Pass pass{ ws, json, image, ws.get_object_tree() };
 	const auto object = pass.find(id);
@@ -499,7 +499,9 @@ int Renderer::picture(Pass &pass, std::uint16_t id) {
 		rgba[i * 4 + 2] = static_cast<std::uint8_t>(std::lround(c.b * 255));
 		rgba[i * 4 + 3] = transparent && index == clear ? 0 : 255;
 	}
-	cached = { nextImage_++, object.get() };
+	// Ids are unique across every terminal in the process: a host may keep one picture store.
+	static std::uint32_t nextImage = 1;
+	cached = { nextImage++, object.get() };
 	pass.image(cached.first, w, h, rgba.data());
 	return static_cast<int>(cached.first);
 }

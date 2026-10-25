@@ -1,0 +1,24 @@
+diff --git a/examples/virtual_terminal/version3_object_pool/main.cpp b/examples/virtual_terminal/version3_object_pool/main.cpp
+index 9d66e5e..8135b72 100644
+--- a/examples/virtual_terminal/version3_object_pool/main.cpp
++++ b/examples/virtual_terminal/version3_object_pool/main.cpp
+@@ -13,6 +13,7 @@
+ 
+ #include <atomic>
+ #include <csignal>
++#include <cstdlib>
+ #include <iostream>
+ #include <thread>
+ 
+@@ -146,7 +147,10 @@ int main(int argc, char **argv)
+ 	std::string objectPoolHash = isobus::IOPFileInterface::hash_object_pool_to_version(testPool);
+ 
+ 	const isobus::NAMEFilter filterVirtualTerminal(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::VirtualTerminal));
+-	const std::vector<isobus::NAMEFilter> vtNameFilters = { filterVirtualTerminal };
++	std::vector<isobus::NAMEFilter> vtNameFilters = { filterVirtualTerminal };
++	// bench: VT_INSTANCE=n connects to the terminal with that function instance only (several terminals on the bus)
++	if (const char *instance = std::getenv("VT_INSTANCE"))
++		vtNameFilters.emplace_back(isobus::NAME::NAMEParameters::FunctionInstance, static_cast<std::uint32_t>(std::atoi(instance)));
+ 	auto TestInternalECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(TestDeviceNAME, 0);
+ 	auto TestPartnerVT = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(0, vtNameFilters);
+ 

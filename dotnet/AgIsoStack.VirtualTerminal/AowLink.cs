@@ -49,7 +49,7 @@ public delegate void LinkFrameHandler(int channel, uint id, ReadOnlySpan<byte> d
 /// <summary>
 /// A link to a CAN gateway. Frames from the bus come through <see cref="FrameReceived"/> on the
 /// link's own thread, as do the other events; <see cref="Send"/> may be called from any thread.
-/// For a <see cref="VirtualTerminal"/>, <see cref="VirtualTerminalLink.Attach"/> wires the two.
+/// For a <see cref="VirtualTerminalStack"/>, <see cref="VirtualTerminalLink.Attach"/> wires the two.
 /// </summary>
 public sealed class AowLink : IDisposable
 {
@@ -425,14 +425,14 @@ public sealed class AowLink : IDisposable
 /// <summary>A terminal on a gateway link.</summary>
 public static class VirtualTerminalLink
 {
-    /// <summary>Wires a terminal to a link: frames from the bus to the terminal, and the link's
-    /// state to <see cref="VirtualTerminal.LinkDown"/> and <see cref="VirtualTerminal.LinkUp"/> (so a
-    /// key held when the link went is released when it comes back). The terminal's frames go out
-    /// through its options: <c>Send = link.Send</c>.</summary>
-    public static void Attach(this VirtualTerminal terminal, AowLink link)
+    /// <summary>Wires the terminals to a link: frames from the bus to the stack, and the link's
+    /// state to <see cref="VirtualTerminalStack.LinkDown"/> and <see cref="VirtualTerminalStack.LinkUp"/>
+    /// (so a key held when the link went is released when it comes back). The terminals' frames go
+    /// out through the options: <c>Send = link.Send</c>.</summary>
+    public static void Attach(this VirtualTerminalStack stack, AowLink link)
     {
-        link.FrameReceived += (channel, id, data, extended, _) => terminal.Receive(id, data, extended, channel);
-        link.Connected += _ => terminal.LinkUp();
-        link.Disconnected += (_, _) => terminal.LinkDown();
+        link.FrameReceived += (channel, id, data, extended, _) => stack.Receive(id, data, extended, channel);
+        link.Connected += _ => stack.LinkUp();
+        link.Disconnected += (_, _) => stack.LinkDown();
     }
 }

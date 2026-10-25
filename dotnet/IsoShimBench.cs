@@ -1,5 +1,5 @@
 // Bench: the terminal on a real bus through an AOW link gateway (bench/aowlink_gateway.py on the CM4,
-// docs/TRANSPORT.md section 5), with the classes a host uses: AowLink attached to VirtualTerminal.
+// docs/TRANSPORT.md section 5), with the classes a host uses: AowLink attached to VirtualTerminalStack.
 // Waits for the example implement (NAME function 16), shows it, presses its alarm soft key (5000),
 // and expects the alarm mask (2000) back. Measures the link's round trip from its heartbeats, and
 // counts upload attempts (ETP request-to-send aimed at us), aborts and link drops.
@@ -19,6 +19,7 @@ using AgIsoStack;
 
 public static class IsoShimBench
 {
+    static VirtualTerminalStack? stack;
     static VirtualTerminal? vt;
     static AowLink? link;
     static int links, drops;
@@ -133,16 +134,17 @@ public static class IsoShimBench
         link.RoundTrip += ms => { lock (rtts) rtts.Add(ms); };
         link.FrameReceived += OnFrame;
         link.HandlerFailed += e => Note($"link handler threw: {e.Message}");
-        vt = new VirtualTerminal(new VirtualTerminalOptions { Send = OnSend, PacketsPerCts = 255, Log = OnLog, LogLevel = 2 });
+        stack = new VirtualTerminalStack(new VirtualTerminalOptions { Send = OnSend, PacketsPerCts = 255, Log = OnLog, LogLevel = 2 });
+        vt = stack.Terminals[0];
         vt.Message += OnMessage;
         vt.WorkingSetsChanged += OnWorkingSets;
         vt.AddressClaimed += a => { serverAddress = a; Note($"terminal claimed 0x{a:X2}"); };
         vt.PoolLoaded += (a, n) => Note($"implement 0x{a:X2}: pool parsed, {n} objects");
         vt.PoolRejected += (a, o) => { poolBad = o; Note($"implement 0x{a:X2}: pool rejected at object {o}"); };
         vt.ImplementLost += (a, why) => Note($"implement 0x{a:X2} gone ({(why == 0 ? "maintenance timeout" : "re-initiated")})");
-        vt.HandlerFailed += e => Note($"handler threw: {e.Message}");
-        vt.Attach(link);
-        try { vt.Start(); }
+        stack.HandlerFailed += e => Note($"handler threw: {e.Message}");
+        stack.Attach(link);
+        try { stack.Start(); }
         catch (InvalidOperationException e) { log($"FAIL start: {e.Message}"); return false; }
         link.Start();
         for (int i = 0; i < 100 && links == 0; i++) Thread.Sleep(50);
@@ -150,7 +152,7 @@ public static class IsoShimBench
         {
             log("FAIL: no link to the gateway in 5 s");
             link.Stop();
-            vt.Stop();
+            stack.Stop();
             return false;
         }
 
@@ -189,7 +191,8 @@ public static class IsoShimBench
         log($"longest gap between arrivals: {maxGapMs:F0} ms, at {maxGapAtMs:F0} ms");
         lock (warnings) { log($"stack warnings and errors: {warningCount}"); foreach (var w in warnings) log("  " + w); }
         log(pass ? $"PASS in {tDone:F0} ms" : "FAIL");
-        vt.Stop();
+        stack.Stop();
+        stack = null;
         vt = null;
         log("stopped");
         return pass;

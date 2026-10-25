@@ -8,7 +8,8 @@ SocketCAN interface, a USB adapter, or a CAN-to-network gateway over TCP or Wi-F
 **Status:** a virtual terminal for AgOpenWeb's VT card ([docs/API.md](docs/API.md)): a
 configuration, stored pool versions, the connected implements, the active screen as a draw list
 that a page paints ([painter/vtpaint.js](painter/vtpaint.js)), soft keys, buttons, input fields,
-alarms and audio; in C# one class, `VirtualTerminal`, packaged with its native libraries
+alarms and audio, one to four terminals on one bus (as several displays in one cab); in C#
+`VirtualTerminalStack` and its `VirtualTerminal`s, packaged with the native libraries
 (`AgIsoStack.VirtualTerminal`). Built against upstream HEAD. The first surface (the spike) passed
 on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro (iPadOS 17.7, full AOT), in process and
 against a real implement over Wi-Fi with delay, loss and link cuts
@@ -73,38 +74,40 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 using AgIsoStack;
 
 var link = new AowLink("192.168.4.1", name: "AgOpenWeb");             // an AOW link gateway on the bus
-var vt = new VirtualTerminal(new VirtualTerminalOptions
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions
 {
-    Send = link.Send,                                                  // the terminal's frames out
+    Send = link.Send,                                                  // the terminals' frames out
     Store = new FilePoolStore(Path.Combine(appData, "pools")),         // stored pool versions
+    Count = 1,                                                         // terminals on the bus, 1 to 4
 });
-vt.Attach(link);                                  // frames in; keys held across a link drop released
+stack.Attach(link);                               // frames in; keys held across a link drop released
+var vt = stack.Terminals[0];
 vt.Message += json => page.Post(json);           // screens, editors, working sets, alarms: as JSON
 vt.Image += image => page.PostImage(image);      // pictures, RGBA, before the screens that use them
 vt.AlarmsChanged += alarms => ShowOverAnyCard(alarms);
 link.Disconnected += (why, text) => ShowBusGone(why);   // reconnects on its own
-vt.Start();
+stack.Start();
 link.Start();
 // The page's taps and entries:
 await vt.SoftKeyAsync(5000, KeyState.Pressed);
 await vt.SelectAsync(9000, open: true);
 var result = await vt.SetNumberAsync(9000, 80);   // Entered, Invalid, NotAnInput
 link.Stop();
-vt.Stop();
+stack.Stop();
 ```
 
-The terminal has one thread of its own: it runs the stack and raises every event, in order;
-calls come from any thread. One terminal per process. How to build a host on it:
+The stack has one thread of its own: it runs every terminal and raises every event, in order;
+calls come from any thread. One stack per process. How to build a host on it:
 [docs/GUIDE.md](docs/GUIDE.md); every member and message: [docs/API.md](docs/API.md); for AI
 assistants: [llms.txt](llms.txt).
-Without a gateway (SocketCAN, a USB adapter), `Send` and `vt.Receive(id, data, extended,
-channel)` carry the frames instead; `vt.LinkDown()` and `vt.LinkUp()` are for any link that can
-drop.
+Without a gateway (SocketCAN, a USB adapter), `Send` and `stack.Receive(id, data, extended,
+channel)` carry the frames instead; `stack.LinkDown()` and `stack.LinkUp()` are for any link that
+can drop.
 
 ## Test
 
 **Self-test** (no bus): `IsoShimSpike.RunAll` puts a terminal and an implement in one process,
-C# carrying every frame between them. Eight runs: an upload of upstream's VT3 example pool
+C# carrying every frame between them. Ten runs: an upload of upstream's VT3 example pool
 (150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
 storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
@@ -112,10 +115,13 @@ and that every callback came on the stepping thread. The sixth uploads `testpool
 (ours, written by `testpools/inputs.py`: every kind of input field) and enters values in each,
 checking what the implement hears, what is refused and what the screen shows. The seventh uploads
 `testpools/drawing.iop` and checks the alarms message as its alarm mask comes and goes, and that
-the implement's audio and volume commands reach the host. The eighth drives the C# class,
-`VirtualTerminal`, as a host would: two sessions with one store (the second loads the pool
-the first stored), input results, a call from inside a handler, stop from either thread, and
-every event on the terminal's one thread. The ninth puts `AowLink` between the terminal and the
+the implement's audio and volume commands reach the host. The eighth starts two terminals with an
+implement each: each terminal has its own address and only its own implement, both screens are
+up at once and both take input, and Identify VT reaches both. The ninth drives the C# classes,
+`VirtualTerminalStack` and `VirtualTerminal`, as a host would: two sessions with one store (the
+second loads the pool the first stored), input results, a call from inside a handler, stop from
+either thread, every event on the stack's one thread, and events reaching the right one of two
+terminals. The tenth puts `AowLink` between the terminal and the
 implement, through a scripted gateway on loopback: the hello, the pool over the link, a gateway
 gone silent (dropped after 1 s, back at once), refusals while busy, and a soft key held when the
 link went, aborted when it is back.

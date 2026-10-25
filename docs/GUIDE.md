@@ -24,15 +24,21 @@ the operator's touches into calls. You don't design any screens: implements brin
 Words used below:
 - **Working set:** one connected implement, known by its 64-bit **NAME** (16 hex digits in JSON) and
   its address on the bus (0 to 253, can change).
-- **Active working set:** the implement whose screen is shown. One at a time; the operator picks it.
+- **Active working set:** the implement whose screen a terminal shows. One at a time per terminal;
+  the operator picks it.
+- **Several terminals:** a cab can have more than one VT (a display for the sprayer, another for
+  boom levelling). Each is a terminal of its own on the bus, with its own NAME and address, and
+  each implement chooses one, usually from a setting in its own menu. The library runs up to four
+  (`Count`), each a `VirtualTerminal` with its own screen, events and calls.
 - **Data mask / alarm mask:** a full screen. An implement shows an alarm mask to demand attention.
 - **Soft key mask:** the column of keys beside the data mask, belonging to the same implement.
 - **Object id:** every object in a pool has a 16-bit id. Taps and values are sent back by id.
 
 ```
- CAN bus ── gateway ──TCP── AowLink ──▶ VirtualTerminal ──JSON──▶ your page (vtpaint.js)
-                               ▲              │   ▲                    │
-                               └── frames ────┘   └── calls ◀── taps ──┘
+ CAN bus ── gateway ──TCP── AowLink ──▶ VirtualTerminalStack
+                               ▲              │   Terminals[0] ──JSON──▶ your page (vtpaint.js)
+                               └── frames ────┘        ▲                       │
+                                                       └──── calls ◀── taps ───┘
 ```
 
 ## Get the package
@@ -68,27 +74,28 @@ package has no library for your runtime (repack after `native/build.sh` for it).
 using AgIsoStack;
 
 var link = new AowLink("192.168.4.1", name: "My terminal");       // a gateway on the bus
-var vt = new VirtualTerminal(new VirtualTerminalOptions
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions
 {
-    Send = link.Send,                                              // the terminal's frames out
+    Send = link.Send,                                              // the terminals' frames out
     Store = new FilePoolStore(Path.Combine(dataDir, "vt-pools")),  // pools kept across runs
     Log = (level, text) => Console.WriteLine($"[{level}] {text}"),
 });
-vt.Attach(link);                     // frames in, and the link's state (see "The bus")
+stack.Attach(link);                  // frames in, and the link's state (see "The bus")
+stack.HandlerFailed += e => Console.WriteLine($"handler failed: {e}");
+link.Disconnected += (why, text) => ShowBusGone(why, text);       // it reconnects by itself
 
+var vt = stack.Terminals[0];                     // one terminal unless Count says more
 vt.Message += json => page.Post(json);           // screens, editors, working sets, alarms
 vt.Image += img => page.PostImage(img);          // pictures, before the screens that use them
 vt.WorkingSetsChanged += (active, list) => ShowImplements(active, list);
 vt.AlarmsChanged += alarms => ShowAlarms(alarms);
 vt.Audio += signal => Beep(signal);
-vt.HandlerFailed += e => Console.WriteLine($"handler failed: {e}");
-link.Disconnected += (why, text) => ShowBusGone(why, text);       // it reconnects by itself
 
-vt.Start();
+stack.Start();
 link.Start();
 // ... the application runs; the page's taps become calls (see "Input") ...
 link.Stop();
-vt.Stop();
+stack.Stop();
 ```
 
 That is the whole of the setup: an implement plugged into the bus now claims its address, finds
@@ -104,10 +111,11 @@ All have defaults; most hosts set only `Send` and `Store`.
 
 | Option | Default | What it is |
 |---|---|---|
-| `Send` | required | Where the terminal's frames go. Called on the terminal's thread: queue the frame and return. |
-| `Store` | in memory | Pool versions (see "Storage"). |
-| `Identity`, `Manufacturer`, `FunctionInstance` | 3, 1407, 0 | The terminal's NAME on the bus. Give each product its own identity; two terminals on one bus need different function instances. |
-| `PreferredAddress` | 0x26 | The address the terminal claims first (0x26 is the primary VT). |
+| `Send` | required | Where the terminals' frames go. Called on the stack's thread: queue the frame and return. |
+| `Store` | in memory | Pool versions, one store for all the terminals (see "Storage"). |
+| `Count` | 1 | Terminals, 1 to 4 (see "Several terminals"). |
+| `Identity`, `Manufacturer`, `FunctionInstance` | 3, 1407, 0 | The first terminal's NAME on the bus; each next terminal has the next function instance. Give each product its own identity; terminals of two products on one bus also need different function instances. |
+| `PreferredAddress` | 0x26 | The address the first terminal claims first (0x26 is the primary VT); the next one more. |
 | `MaskWidth`, `MaskHeight` | 480, 480 | The data mask in pixels, as reported to implements. Implements lay out their screens for this size; the page scales the result. |
 | `KeyWidth`, `KeyHeight` | 80, 80 | One soft key in pixels. |
 | `PhysicalKeys`, `VirtualKeys`, `NavigationKeys` | 6, 64, 0 | Soft keys shown at once, keys a mask may hold, navigation keys. |
@@ -115,30 +123,56 @@ All have defaults; most hosts set only `Send` and `Store`.
 | `SmallFonts`, `LargeFonts` | 0xFF, 0xFF | Font sizes reported as supported. |
 | `PacketsPerCts` | 255 | Frames per clear-to-send in a transfer. 255 makes uploads several times faster over a network link; keep it. |
 | `StepMilliseconds` | 5 | Longest gap between runs of the stack. A frame arriving wakes it at once. |
-| `Log`, `LogLevel` | none, 2 | The stack's log, 0 debug to 4 critical, from `LogLevel` up. Called from the terminal's thread and from a pool's parsing thread. |
+| `Log`, `LogLevel` | none, 2 | The stack's log, 0 debug to 4 critical, from `LogLevel` up. Called from the stack's thread and from a pool's parsing thread. |
+
+### Several terminals
+
+```csharp
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions { Send = link.Send, Store = store, Count = 2 });
+foreach (var vt in stack.Terminals)
+{
+    var card = cards[vt.Index];                  // one screen on the page for each
+    vt.Message += json => card.Post(json);
+    vt.Image += img => card.PostImage(img);
+    vt.Identify += () => card.ShowNumber(vt.Index + 1);
+}
+```
+
+- Each terminal is a VT of its own on the bus: function instance `FunctionInstance + Index`,
+  address `PreferredAddress + Index` (0x26, 0x27, ...). Implements see them all.
+- **The implement chooses**, not the host: most offer a "VT number" or "preferred VT" setting in
+  their own menu, and remember it. A new implement usually goes to the first terminal; the
+  operator moves it from there. There is no call that moves an implement.
+- Each terminal shows one implement at a time, as one display does; `ActivateAsync` switches among
+  the implements on that terminal only. Calls and events are each terminal's own.
+- `Identify` asks the host to show that terminal's number for about 3 s. Implements send it to
+  every terminal while the operator is choosing one; show the number on each screen.
+- Picture ids are unique across the terminals, so one picture store on the page will do.
+- `Count` is fixed while the stack runs: to change it, stop the stack and make a new one. The
+  implements see their terminal go and come back, and load their pools from the store.
 
 ## Threading: the rules
 
-The terminal owns one thread. These rules keep a host correct:
+The stack owns one thread, which runs every terminal. These rules keep a host correct:
 
-1. **Every event and every store call comes on the terminal's thread, in order.** To touch UI,
+1. **Every event and every store call comes on the stack's thread, in order.** To touch UI,
    post to your UI thread (`Dispatcher.BeginInvoke`, `MainThread.BeginInvokeOnMainThread`,
    `SynchronizationContext.Post`). **Never use a synchronous invoke** (`Dispatcher.Invoke`,
    `InvokeOnMainThreadAsync(...).Wait()`) from a handler: if the UI thread is waiting on the
-   terminal at that moment, both stop.
+   stack at that moment, both stop.
 2. **Keep handlers short.** The bus waits while a handler runs; a transfer stalls at one step per
    handler. Copy what you need and return.
 3. **Calls work from any thread**, including from inside a handler (they run at once there). Each
-   returns a task that completes when the terminal has done it. Await them; don't block on
+   returns a task that completes when the stack has done it. Await them; don't block on
    `.Result` from a thread that a handler may be waiting on.
-4. **A handler that throws doesn't stop the terminal.** The exception goes to `HandlerFailed`.
+4. **A handler that throws doesn't stop the stack.** The exception goes to `HandlerFailed`.
    Subscribe to it, or failures in your handlers go unseen.
 5. **`Receive` and `AowLink.Send` work from any thread** and return at once.
-6. **One terminal per process.** `Start` throws if another is running. A stopped terminal can be
-   started again.
-7. **`Stop` waits** for the terminal to finish, including any pool still parsing (up to a few
-   seconds for a big pool). Called from the terminal's own thread (a handler), it only asks and
-   returns; the terminal stops after the current step.
+6. **One stack per process** (with up to four terminals). `Start` throws if another is running. A
+   stopped stack can be started again.
+7. **`Stop` waits** for the stack to finish, including any pool still parsing (up to a few
+   seconds for a big pool). Called from the stack's own thread (a handler), it only asks and
+   returns; the stack stops after the current step.
 
 ## The bus
 
@@ -155,7 +189,7 @@ SocketCAN.
 - **Frames sent while the link is down are dropped**, never saved for later (`FramesDropped`
   counts them). The implements notice the terminal is gone after 3 s and reconnect when it comes
   back. A short cut usually goes unnoticed.
-- **`vt.Attach(link)`** connects the two. When the link comes back after a cut, any key or button
+- **`stack.Attach(link)`** connects the two. When the link comes back after a cut, any key or button
   that was held is sent as aborted, so an implement never sees a press without its end.
 - `StatusReceived` reports each bus's state and error counters; `RoundTrip` reports the
   heartbeat's round trip in ms. Both are for showing link health.
@@ -169,20 +203,20 @@ SocketCAN.
 Anything that moves CAN frames works: SocketCAN, a USB adapter, your own protocol.
 
 ```csharp
-var vt = new VirtualTerminal(new VirtualTerminalOptions
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions
 {
     Send = (channel, id, data, extended) => adapter.Write(id, data.ToArray(), extended),
 });
-adapter.FrameReceived += (id, data, extended) => vt.Receive(id, data, extended);
+adapter.FrameReceived += (id, data, extended) => stack.Receive(id, data, extended);
 ```
 
 - Frames are 29-bit (extended) ISOBUS frames on channel 0; the bus is 250 kbit/s.
-- `Send` runs on the terminal's thread: copy the span (it is valid only during the call), queue
+- `Send` runs on the stack's thread: copy the span (it is valid only during the call), queue
   the frame and return.
 - Deliver received frames promptly, in order. Hold-ups of more than a few hundred milliseconds
   make implements time out a transfer.
-- If your link can drop, call `vt.LinkDown()` when it goes and `vt.LinkUp()` when it is up,
-  the first time too: the terminal then sends its address claim again and asks the bus for
+- If your link can drop, call `stack.LinkDown()` when it goes and `stack.LinkUp()` when it is up,
+  the first time too: each terminal then sends its address claim again and asks the bus for
   every address claim. Both go out at start, possibly before the link is up, and a terminal and
   an implement that never heard each other's claim don't talk.
 
@@ -204,6 +238,7 @@ to the page unchanged; the others are also raised as typed events for the host.
 | `workingSets` | An implement came, went, or its pool progressed | An implement switcher, upload progress (also `WorkingSetsChanged`) |
 | `alarms` | An implement raised or cleared an alarm mask | An alarm banner (also `AlarmsChanged`) |
 | `audio`, `volume` | An implement asked for a sound | Play it (also `Audio`, `Volume`) |
+| `identify` | An implement asked the terminals to show their numbers | Show this terminal's for about 3 s (also `Identify`) |
 
 Pictures come separately through `vt.Image`, once each and before the first screen that uses
 them, as RGBA pixels. Send them to the page in any form (base64 in JSON is fine) and keep them
@@ -212,7 +247,7 @@ for as long as the terminal runs: later screens refer to them only by id.
 ### Painting
 
 ```js
-const images = new VtImages();            // one per terminal
+const images = new VtImages();            // one per page (ids are unique across terminals)
 let screen = null;
 
 function onHostMessage(m) {               // whatever your bridge delivers
@@ -351,8 +386,8 @@ messages follow, so drive the editor from the messages, not from your own calls.
 
 ### Choosing the implement
 
-`WorkingSetsChanged` gives the shown implement's NAME (`null`: none) and the list, each with its
-address, pool state (`Waiting`, `Transferring` with `Progress` in percent, `Parsing`, `Ready`,
+`WorkingSetsChanged` gives the implement the terminal shows (its NAME; `null`: none) and the ones
+connected to that terminal, each with its address, pool state (`Waiting`, `Transferring` with `Progress` in percent, `Parsing`, `Ready`,
 `Failed`) and object count. `ActivateAsync(name)` shows another one. While none is shown, the
 first selectable implement whose pool is ready is shown by itself. An implement whose
 `Selectable` is false asks not to be offered to the operator.
@@ -382,17 +417,17 @@ takes about a second instead of an upload (about 15 s for a 150 kB pool at 250 k
   with a store that refuses: an implement told "not stored" drops its connection and uploads
   again.
 - Your own `IPoolStore` (a database, the cloud) must implement five methods. They are called on
-  the terminal's thread, so keep them quick. `Save` may arrive in parts: the first with
+  the stack's thread, so keep them quick. `Save` may arrive in parts: the first with
   `append` false, the rest appended. Labels are 7 bytes, or 32 for VT 5 and 6 extended labels,
   and the two lengths are separate versions. An exception counts as a failure and goes to
   `HandlerFailed`.
 
 ## Lifecycle
 
-- **Start** before the link, so no frame arrives at a stopped terminal. `Start` returns once the
-  terminal is running; `AddressClaimed` follows when it has its address (about 250 ms after
+- **Start** before the link, so no frame arrives at a stopped stack. `Start` returns once the
+  terminals are running; each one's `AddressClaimed` follows when it has its address (about 250 ms after
   frames flow).
-- **Stop** the link first, then the terminal. `Stop` is safe at any moment, even mid-upload or
+- **Stop** the link first, then the stack. `Stop` is safe at any moment, even mid-upload or
   while a pool is parsing.
 - **App to background** (mobile): the simplest is to stop both and start both again when the
   app returns. The implements see a terminal that went away and came back, and load their pools
@@ -405,10 +440,11 @@ takes about a second instead of an upload (about 15 s for a 150 kB pool at 250 k
 |---|---|
 | Nothing happens, no `AddressClaimed` | Frames aren't reaching the bus: `Send` is wired? `link.IsConnected`? `Disconnected` with `Busy` means another terminal holds the gateway. |
 | An implement uploads every time it connects | The store isn't kept: the `FilePoolStore` folder is temporary or cleared, or a custom store returns false. |
-| An implement uploads again after a few seconds | It lost the terminal for 3 s: a link cut, or a handler blocking the terminal's thread. |
+| An implement uploads again after a few seconds | It lost the terminal for 3 s: a link cut, or a handler blocking the stack's thread. |
 | Upload stalls or fails partway | Handlers or the store too slow; frames held up in your transport; `HandlerFailed`. Turn on `Log` at level 1. |
 | `DllNotFoundException` / `EntryPointNotFoundException` | No native library for this runtime in the package. On iOS, reference the package (its build targets link the static library), not just the DLL. |
-| "A terminal is already running in this process." | One per process: stop the first. |
+| "A terminal stack is already running in this process." | One per process: stop the first, or give one stack a higher `Count`. |
+| An implement is on the wrong terminal | It chose it: change its VT setting in the implement's own menu. |
 | A field gives `Invalid` | Number: the value is raw (before offset and scale) and outside `min`..`max`. String: too long, or characters the field refuses. |
 | Something on screen is a dashed magenta box with a label | An object the renderer doesn't draw yet (see Limits). |
 
@@ -417,7 +453,7 @@ errors.
 
 ## Limits
 
-- One terminal per process, on one bus (channel 0).
+- One stack per process, up to four terminals, on one bus (channel 0).
 - **Not drawn yet** (shown as labelled boxes): animations, graphics contexts, scaled graphics,
   VT 6 window masks and key groups, and other newer objects. Fonts are approximations of the
   standard's fixed cells.
@@ -433,6 +469,6 @@ Known upstream gaps and their status are in [PLAN.md](PLAN.md#upstream-gaps-in-t
 - [API.md](API.md): every type, member, message and draw-list field; the C interface for hosts not
   in .NET.
 - [TRANSPORT.md](TRANSPORT.md): the gateway protocol, for writing a gateway.
-- `dotnet/VirtualTerminalTest.cs`: the self-test that drives the class as a host would, including
-  inputs, stores and stopping from either thread. A working example of everything above.
+- `dotnet/VirtualTerminalTest.cs`: the self-test that drives the classes as a host would, including
+  inputs, stores, two terminals and stopping from either thread. A working example of everything above.
 - `painter/index.html`: a page that paints screens with `vtpaint.js`.

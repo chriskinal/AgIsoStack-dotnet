@@ -60,8 +60,9 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    soft keys and buttons, input fields (select, numbers, strings, booleans, lists, escape),
    alarms and audio, and the C# package (`AgIsoStack.VirtualTerminal`: macOS, iOS, three
    Android ABIs, Linux x64 and arm64, Windows x64; the self-test passes on Linux and Windows,
-   and a fresh app using only the package runs on each). Next: the self-test on the tablets and
-   the bench on this surface, then merge to main. The terminal is AgOpenWeb's VT card, in its backend
+   and a fresh app using only the package runs on each). The self-test passes on the tablets and
+   the bench passes through the class on the Mac and both tablets (RESULTS.md). Next:
+   AgOpenWeb's side (its VT card), and the store-version gap in upstream's client below. The terminal is AgOpenWeb's VT card, in its backend
    (it replaces the `aow-vtd` daemon once planned): any implement, ISOBUS or DIY, talks to
    AgOpenWeb directly (decided 2026-10-24).
 2. **The client side**, for implements in .NET (the stack's VT client and task controller

@@ -15,7 +15,9 @@ public sealed class VirtualTerminalOptions
 {
     /// <summary>Sends the terminal's frames. Required.</summary>
     public FrameSender? Send { get; init; }
-    /// <summary>Stored pools; none: every implement uploads its pool each time.</summary>
+    /// <summary>Stored pools; none: kept in memory until the process ends. (A terminal that
+    /// answers "not stored" costs the implement its connection: upstream's VT client, which most
+    /// implements use, waits out the reply and resets.)</summary>
     public IPoolStore? Store { get; init; }
     /// <summary>The terminal's NAME: identity number (3), manufacturer code (1407), function instance (0).</summary>
     public uint Identity { get; init; }

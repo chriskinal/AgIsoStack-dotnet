@@ -1,7 +1,8 @@
-// Bench: the terminal on a real bus, its frames over TCP from bench/can_tcp_relay.py on the CM4.
-// Waits for the example implement (NAME function 16), shows it, presses its alarm soft key (5000),
-// and expects the alarm mask (2000) back. Measures the link with a ping every 50 ms, and counts upload attempts
-// (ETP request-to-send aimed at us) and aborts as they cross the link.
+// Bench: the terminal on a real bus, its frames over TCP from bench/can_tcp_relay.py on the CM4,
+// through the class a host uses (VirtualTerminal: its own thread, woken by each frame that
+// arrives). Waits for the example implement (NAME function 16), shows it, presses its alarm soft
+// key (5000), and expects the alarm mask (2000) back. Measures the link with a ping every 50 ms,
+// and counts upload attempts (ETP request-to-send aimed at us) and aborts as they cross the link.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -11,18 +12,21 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
-using AgIsoStack.Interop;
-using static AgIsoStack.Interop.IsoShim;
+using System.Threading.Tasks;
+using AgIsoStack;
 
-public static unsafe class IsoShimBench
+public static class IsoShimBench
 {
     static Socket? sock;
+    static VirtualTerminal? vt;
     static readonly object sendLock = new();
     static readonly Stopwatch clock = new();
     static long framesOut, framesIn;
     static volatile int serverAddress = -1, poolBad = -1, mask = -1;
     static ulong wanted; // the example implement's NAME, once its pool is ready
+    static readonly Regex MaskField = new("\"mask\":(\\d+)");
     static int screensDrawn;
     static readonly List<string> events = new();
     static readonly List<string> warnings = new();
@@ -35,60 +39,41 @@ public static unsafe class IsoShimBench
 
     static void Note(string s) { lock (events) events.Add($"{clock.Elapsed.TotalMilliseconds,7:F0} ms  {s}"); }
 
-    [UnmanagedCallersOnly]
-    static void OnSend(int channel, uint id, byte* data, int len, int extended)
+    static void OnSend(int channel, uint id, ReadOnlySpan<byte> data, bool extended)
     {
         Span<byte> rec = stackalloc byte[18];
         rec.Clear();
         rec[0] = 1;
-        uint wire = (id & 0x1FFFFFFF) | (extended != 0 ? 0x80000000u : 0);
+        uint wire = (id & 0x1FFFFFFF) | (extended ? 0x80000000u : 0);
         BitConverter.TryWriteBytes(rec.Slice(5, 4), wire);
-        rec[9] = (byte)len;
-        new ReadOnlySpan<byte>(data, len).CopyTo(rec.Slice(10));
+        rec[9] = (byte)data.Length;
+        data.CopyTo(rec.Slice(10));
         Interlocked.Increment(ref framesOut);
-        WatchEtp(id, new ReadOnlySpan<byte>(data, len), outgoing: true);
+        WatchEtp(id, data, outgoing: true);
         lock (sendLock) { try { sock?.Send(rec); } catch (SocketException) { } }
     }
 
-    [UnmanagedCallersOnly]
-    static void OnEvent(int kind, int a, int b)
+    // The screens carry the active mask; the working set list finds the example implement, the
+    // one whose NAME has function code 16.
+    static void OnMessage(string json)
     {
-        switch (kind)
+        if (json.StartsWith("{\"type\":\"screen\""))
         {
-            case ServerAddress: serverAddress = a; Note($"terminal claimed 0x{a:X2}"); break;
-            case PoolOk: Note($"implement 0x{b:X2}: pool parsed, {a} objects"); break;
-            case PoolBad: Note($"implement 0x{b:X2}: pool rejected at object {a}"); break;
-            case Mask: mask = a; Note($"active mask {a} (implement 0x{b:X2})"); break;
-            case Active: Note($"implement 0x{a:X2} shown"); break;
-            case ParseStart: Note($"pool from 0x{b:X2} arrived, parsing"); break;
-            case WsShutdown: Note($"implement 0x{b:X2} gone ({(a == 0 ? "maintenance timeout" : "re-initiated")})"); break;
+            screensDrawn++;
+            var m = MaskField.Match(json);
+            if (m.Success && int.Parse(m.Groups[1].Value) is int now && now != mask) { mask = now; Note($"active mask {now}"); }
         }
     }
 
-    // The working set list: the example implement is the one whose NAME has function code 16.
-    [UnmanagedCallersOnly]
-    static void OnMessage(byte* json, int len)
+    static void OnWorkingSets(ulong? active, IReadOnlyList<WorkingSetInfo> list)
     {
-        using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(new ReadOnlySpan<byte>(json, len).ToArray()));
-        var root = doc.RootElement;
-        string type = root.GetProperty("type").GetString()!;
-        if (type == "screen") { screensDrawn++; return; }
-        if (type != "workingSets" || wanted != 0) return;
-        foreach (var ws in root.GetProperty("list").EnumerateArray())
-        {
-            ulong name = Convert.ToUInt64(ws.GetProperty("name").GetString(), 16);
-            if (((name >> 40) & 0xFF) == 16 && ws.GetProperty("state").GetString() == "ready") wanted = name;
-        }
+        if (wanted != 0) return;
+        foreach (var ws in list)
+            if (((ws.Name >> 40) & 0xFF) == 16 && ws.State == PoolState.Ready) wanted = ws.Name;
     }
 
-    [UnmanagedCallersOnly]
-    static void OnImage(uint id, int w, int h, byte* rgba) { }
-
-    [UnmanagedCallersOnly]
-    static void OnLog(int level, byte* text)
+    static void OnLog(int level, string s)
     {
-        if (level < 2) return;
-        string s = Marshal.PtrToStringUTF8((IntPtr)text) ?? "";
         lock (warnings) { warningCount++; if (warnings.Count < 12) warnings.Add($"{clock.Elapsed.TotalMilliseconds,7:F0} ms  {s}"); }
     }
 
@@ -140,8 +125,7 @@ public static unsafe class IsoShimBench
                         uint wire = BitConverter.ToUInt32(buf, off + 5);
                         int len = Math.Min((int)buf[off + 9], 8);
                         uint id = wire & 0x1FFFFFFF;
-                        fixed (byte* p = &buf[off + 10])
-                            isoshim_receive(0, id, p, len, (wire & 0x80000000) != 0 ? 1 : 0);
+                        vt!.Receive(id, new ReadOnlySpan<byte>(buf, off + 10, len), (wire & 0x80000000) != 0);
                         WatchEtp(id, new ReadOnlySpan<byte>(buf, off + 10, len), outgoing: false);
                         Interlocked.Increment(ref framesIn);
                         off += 18;
@@ -192,39 +176,44 @@ public static unsafe class IsoShimBench
         try { sock.Connect(host, port); }
         catch (SocketException e) { log($"FAIL connect: {e.Message}"); return false; }
         Note("connected to relay");
+        vt = new VirtualTerminal(new VirtualTerminalOptions { Send = OnSend, PacketsPerCts = 255, Log = OnLog, LogLevel = 2 });
+        vt.Message += OnMessage;
+        vt.WorkingSetsChanged += OnWorkingSets;
+        vt.AddressClaimed += a => { serverAddress = a; Note($"terminal claimed 0x{a:X2}"); };
+        vt.PoolLoaded += (a, n) => Note($"implement 0x{a:X2}: pool parsed, {n} objects");
+        vt.PoolRejected += (a, o) => { poolBad = o; Note($"implement 0x{a:X2}: pool rejected at object {o}"); };
+        vt.ImplementLost += (a, why) => Note($"implement 0x{a:X2} gone ({(why == 0 ? "maintenance timeout" : "re-initiated")})");
+        vt.HandlerFailed += e => Note($"handler threw: {e.Message}");
+        try { vt.Start(); }
+        catch (InvalidOperationException e) { log($"FAIL start: {e.Message}"); return false; }
+        // The link's reader hands each frame straight to the terminal (any thread may).
         var stop = new CancellationTokenSource();
         var reader = new Thread(Reader) { IsBackground = true, Name = "relay-rx" };
         reader.Start();
         new Thread(() => Pinger(stop.Token)) { IsBackground = true, Name = "ping" }.Start();
 
-        isoshim_set_log(&OnLog, 2);
-        var config = new Config { PacketsPerCts = 255 };
-        var callbacks = new Host { Send = &OnSend, Event = &OnEvent, Message = &OnMessage, Image = &OnImage };
-        int rc = isoshim_vt_start(&config, &callbacks);
-        if (rc != 0) { log($"FAIL start {rc}"); return false; }
-
         bool shown = false, pressed = false, pass = false;
         double tPool = -1, tDone = -1;
         while (clock.Elapsed.TotalSeconds < timeoutS)
         {
-            isoshim_step();
             if (poolBad >= 0) break;
             if (!shown && wanted != 0)
             {
                 tPool = clock.Elapsed.TotalMilliseconds;
-                shown = isoshim_activate(wanted) == 1;
+                shown = vt.ActivateAsync(wanted).GetAwaiter().GetResult();
                 Note($"example implement {wanted:X16} ready; shown: {(shown ? "yes" : "no")}");
             }
             if (shown && !pressed && mask == 1000)
             {
-                pressed = isoshim_soft_key(5000, Pressed) == 1 && isoshim_soft_key(5000, Released) == 1;
+                pressed = vt.SoftKeyAsync(5000, KeyState.Pressed).GetAwaiter().GetResult()
+                       && vt.SoftKeyAsync(5000, KeyState.Released).GetAwaiter().GetResult();
                 Note($"pressed soft key 5000: {(pressed ? "sent" : "not sent")}");
             }
             if (pressed && mask == 2000) { tDone = clock.Elapsed.TotalMilliseconds; pass = true; break; }
             Thread.Sleep(2);
         }
-        // A second more of the bus (still stepping), then the link goes first and the reader is joined, so nothing reaches the stack while it stops.
-        for (var end = clock.Elapsed.TotalMilliseconds + 1000; clock.Elapsed.TotalMilliseconds < end;) { isoshim_step(); Thread.Sleep(2); }
+        // A second more of the bus, then the link goes first and the reader is joined, so nothing reaches the stack while it stops.
+        Thread.Sleep(1000);
         stop.Cancel();
         lock (sendLock) { sock.Close(); sock = null; }
         reader.Join(2000);
@@ -240,7 +229,8 @@ public static unsafe class IsoShimBench
         log($"longest gap between arrivals: {maxGapMs:F0} ms, at {maxGapAtMs:F0} ms");
         lock (warnings) { log($"stack warnings and errors: {warningCount}"); foreach (var w in warnings) log("  " + w); }
         log(pass ? $"PASS in {tDone:F0} ms" : "FAIL");
-        isoshim_stop();
+        vt.Stop();
+        vt = null;
         log("stopped");
         return pass;
     }

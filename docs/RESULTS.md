@@ -123,3 +123,26 @@ cleanly.
 - **Speed at 16 per DPO over a quiet link** (34 s, against about 22 s in process): part of the
   difference was how often the v1 terminal looked for frames (10 ms in the bench, 4 ms in the
   stack). v2 steps every 2 ms; not re-measured at 16 over the link.
+
+## 2026-10-24: the C# class on every platform, and on the bench
+
+The self-test (eight runs, the last driving `VirtualTerminal` as a host would) passes on macOS,
+the Galaxy Tab, the iPad (full AOT), Linux arm64 and x64 (.NET containers; x64 under Rosetta)
+and Windows x64 (a Parallels VM, Windows on ARM, under its x64 emulation). A fresh app using only
+the package claims its address on Linux arm64 and x64, Windows x64 and macOS.
+
+The bench now runs through `VirtualTerminal` (its own thread, woken by each frame the link's
+reader hands it) instead of stepping the raw interface itself. Home Wi-Fi, one run each, every
+one passed with one upload attempt per implement, no aborts, the pools stored:
+
+| Packets per DPO | | Mac | Galaxy Tab | iPad |
+|---|---|---|---|---|
+| 255 | first request-to-send to pool parsed | 17.9 s | 18.0 s | 15.5 s |
+| 255 | start to soft key round trip | 19.1 s | 19.4 s | 18.5 s |
+| 16 | first request-to-send to pool parsed | 33.4 s | 40.4 s | 38.1 s |
+
+Round trip p50 / p99 5-10 / 14-48 ms. In line with the raw interface's runs (about 19 s to the
+round trip at 255; 45-55 s to parse at 16, on a worse Wi-Fi day). The first runs failed: with no
+pool store the terminal answered Store Version with an error, and upstream's VT client then
+resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
+now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).

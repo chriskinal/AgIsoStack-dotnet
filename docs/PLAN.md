@@ -130,6 +130,14 @@ upstream pull request with a test; the wrapper's terminal will meet them.
 | 9 | Sending a second multi-frame message to an implement while the last one is closing fails (one session per pair); the server's own sends do not retry. The wrapper queues the operator's messages (`Terminal::post`) (found here, 2026-10-24) | input |
 | 10 | The pool parser checks an alarm mask's acoustic signal but never stores it (`set_signal_priority` is not called), so every alarm mask reports signal 0, the highest (found here, 2026-10-24; fix offered upstream with the enum, which numbered lowest 3 and none 4: [#803](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/803)) | alarms |
 
+**In the VT client** (the implements' side, which aow-hatd and the example implement use):
+when the terminal answers Store Version with an error, the client logs it but stays waiting for
+the answer, times out after 3 s and resets the connection, then uploads again: a terminal that
+cannot store pools never keeps an upstream implement (found on the bench, 2026-10-24; storing is
+optional, so an error should leave it connected). The C# class keeps pools in memory when the host
+gives no store; the raw interface with no save callback still answers "not stored". Not reported
+upstream yet.
+
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one
 thread). Also reported by us: #802 (above).

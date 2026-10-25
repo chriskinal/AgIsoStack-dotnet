@@ -156,5 +156,7 @@ terminal to end; from the terminal's own thread (code that resumed there after a
 something a handler completed) it only asks. `Message` carries every message as JSON, for the
 page; `WorkingSetsChanged`, `AlarmsChanged`, `Audio`, `Volume`, `AddressClaimed`, `PoolLoaded`,
 `PoolRejected` and `ImplementLost` are the ones the host itself acts on, typed. Stores:
-`FilePoolStore` (a folder per NAME, a file per label) and `MemoryPoolStore`. One terminal per
-process: the native stack is one.
+`FilePoolStore` (a folder per NAME, a file per label) and `MemoryPoolStore`, the default: with no
+store the terminal still stores, for as long as the process runs, because an upstream implement
+told "not stored" drops its connection (PLAN.md, upstream gaps). One terminal per process: the
+native stack is one.

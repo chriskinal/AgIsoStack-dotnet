@@ -32,6 +32,7 @@ public sealed unsafe class VirtualTerminal : IDisposable
     static VirtualTerminal? running;
 
     readonly VirtualTerminalOptions options;
+    readonly IPoolStore store;
     readonly ConcurrentQueue<Action> work = new();
     readonly AutoResetEvent wake = new(false);
     Thread? thread;
@@ -42,6 +43,7 @@ public sealed unsafe class VirtualTerminal : IDisposable
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         if (options.Send == null) throw new ArgumentException("Send is required", nameof(options));
+        store = options.Store ?? new MemoryPoolStore();
     }
 
     // ---- events (on the terminal's thread) ----
@@ -314,7 +316,7 @@ public sealed unsafe class VirtualTerminal : IDisposable
 
     static bool Store(Func<IPoolStore, bool> call)
     {
-        var store = running?.options.Store;
+        var store = running?.store;
         if (store == null) return false;
         bool ok = false;
         Raise(() => ok = call(store));

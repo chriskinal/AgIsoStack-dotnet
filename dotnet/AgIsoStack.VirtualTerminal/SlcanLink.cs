@@ -65,6 +65,9 @@ public sealed class SlcanLink : IDisposable
     public event Action<string>? Connected;
     /// <summary>The adapter is gone, and why. It is opened again on its own.</summary>
     public event Action<LinkCloseReason, string>? Disconnected;
+    /// <summary>The adapter could not be opened, and why (not plugged in, waiting for the
+    /// user's permission): raised when the reason changes, not on every retry.</summary>
+    public event Action<string>? OpenFailed;
     /// <summary>A handler threw; the link carries on.</summary>
     public event Action<Exception>? HandlerFailed;
 
@@ -165,7 +168,12 @@ public sealed class SlcanLink : IDisposable
         }
         catch (Exception e)
         {
-            LastError = e.Message; // not there (yet), or no permission yet: tried again
+            // Not there (yet), or no permission yet: tried again.
+            if (e.Message != LastError)
+            {
+                LastError = e.Message;
+                Raise(() => OpenFailed?.Invoke(e.Message));
+            }
             return;
         }
         port = p;

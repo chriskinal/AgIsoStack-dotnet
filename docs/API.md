@@ -207,6 +207,7 @@ go out by the options: `Send = link.Send`.
 | `LinkFrameHandler FrameReceived` | Channel 0; `timeUs` is this link's receive time. `T` and `t` lines; replies, remote frames and anything else are not frames. |
 | `Action<string> Connected` | Open and on the bus: the port's name, and the adapter's version reply if it gave one. |
 | `Action<LinkCloseReason, string> Disconnected` | `Lost` (the port went: unplugged) or `ShuttingDown`. |
+| `Action<string> OpenFailed` | The adapter couldn't be opened, and why; raised when the reason changes, not on every retry. |
 | `Action<Exception> HandlerFailed` | |
 
 `static void VirtualTerminalLink.Attach(this VirtualTerminalStack stack, SlcanLink link)`: as for

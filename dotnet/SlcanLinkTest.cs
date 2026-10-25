@@ -168,6 +168,8 @@ public static class SlcanLinkTest
         link.Connected += i => { info = i; Interlocked.Increment(ref ups); };
         link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         link.FrameReceived += (_, id, data, extended, _) => heard.Enqueue((id, extended, data.ToArray()));
+        var openFailures = new ConcurrentQueue<string>();
+        link.OpenFailed += why => openFailures.Enqueue(why);
 
         ulong? active = null;
         IReadOnlyList<WorkingSetInfo>? sets = null;
@@ -191,7 +193,8 @@ public static class SlcanLinkTest
         {
             link.Start();
             await Task.Delay(300);
-            Check($"no adapter: the link stays down and says why (\"{link.LastError}\")", !link.IsConnected && link.LastError.Length > 0);
+            Check($"no adapter: the link stays down and says why, once (\"{link.LastError}\")",
+                !link.IsConnected && link.LastError.Length > 0 && openFailures.Count == 1);
             adapter.Plugged = true;
             Check("plugged in: link up", await Until(() => ups == 1 && link.IsConnected, 3000));
             var setup = adapter.Commands.Where(c => c.Length > 0).Take(4).ToArray();

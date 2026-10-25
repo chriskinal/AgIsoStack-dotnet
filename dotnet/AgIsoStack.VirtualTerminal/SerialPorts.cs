@@ -72,7 +72,13 @@ public sealed class SystemSerialPort : ISerialPort
         port = new System.IO.Ports.SerialPort(name, baudRate) { ReadTimeout = 100, WriteTimeout = 1000, DtrEnable = true, RtsEnable = true };
     }
 
-    public void Open() => port.Open();
+    public void Open()
+    {
+        // On macOS and Linux a missing device comes back as "access denied": say what it is.
+        if (!OperatingSystem.IsWindows() && !System.IO.File.Exists(port.PortName))
+            throw new System.IO.IOException($"{port.PortName} is not plugged in");
+        port.Open();
+    }
 
     public int Read(byte[] buffer, int offset, int count)
     {

@@ -73,9 +73,11 @@ offered to the Open-Agriculture project once it is a library rather than a spike
 4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
    (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.
-   Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Fixed
-   upstream by #805 (e932041, 2026-10-25), not yet in our pin: move it, with the self-test on the
-   Mac and both tablets. Then offer the wrapper.
+   Fixed upstream by #805 (e932041, 2026-10-25), in our pin since 2026-10-25: `Terminal::~Terminal`
+   no longer joins; built against 77b8dc9 without it, the stop-while-parsing run aborts (a
+   joinable thread destroyed), against e932041 it passes on the Mac and both tablets. The
+   never-called parse start hook is still open: `step()` still looks for a parse running. Then
+   offer the wrapper.
 5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24).
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three

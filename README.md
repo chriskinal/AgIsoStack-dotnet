@@ -26,8 +26,8 @@ MIT, like AgIsoStack++.
   queues the frame); every callback except the log runs on the stepping thread.
 - **Step often.** A multi-frame transfer moves one step per clear-to-send, so the host steps
   every few milliseconds on a thread of its own (2 ms in the bench), not from a UI frame timer.
-- **Stop at any point.** The terminal joins any object pool parse still running before it is
-  destroyed (upstream's managed working set does not; see docs/RESULTS.md).
+- **Stop at any point.** Any object pool parse still running is joined before the terminal is
+  destroyed (by upstream's managed working set, since #805).
 - **255 frames per clear-to-send** by default (the config's `packets_per_cts`): with the stack's
   own 16, an upload is held to about half the bus rate in process and pays a round trip per 16
   frames over a network link.

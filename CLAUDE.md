@@ -31,7 +31,8 @@ to continue it in its own repo).
   stack thread (`initialize(true)`): the shim supplies `send_can_message_frame_to_hardware` and
   drives `receive_`, `on_transmit_` and `periodic_update_from_hardware` itself.
 - **Anything that owns a thread is joined before it is destroyed** (the VT server's pool
-  parsing threads: `Terminal::~Terminal`, upstream #802). The self-test's stop-while-parsing run
+  parsing threads: the managed working set's destructor joins its own, upstream #805 fixing
+  #802; the shim joined them itself until the pin carried it). The self-test's stop-while-parsing run
   is the check; after changing teardown, break it on purpose once and see that run crash.
 - **The pin follows upstream HEAD** (`AGISOSTACK_GIT_TAG` in `native/CMakeLists.txt`): the
   user's rule, as for AgOpenWeb-HAT. Move it, then run the self-test on the Mac, the Android

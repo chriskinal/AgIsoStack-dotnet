@@ -107,13 +107,11 @@ public:
 		});
 	}
 
-	// A pool can still be parsing on its own thread; the working set that owns the thread must not
-	// be destroyed (by the base class, after this) until it has finished. Upstream's working set
-	// does not join it itself (AgIsoStack++ #802).
+	// A pool can still be parsing on its own thread: the working set joins it when destroyed
+	// (AgIsoStack++ #805, fixing #802).
 	~Terminal() {
 		isobus::CANNetworkManager::CANNetwork.remove_any_control_function_parameter_group_number_callback(
 		  static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::ECUtoVirtualTerminal), onImplementMessage, this);
-		for (const auto &ws : managedWorkingSetList) ws->join_parsing_thread();
 	}
 
 	// After the base class's own initialize: a second listener on the implements' messages, for the

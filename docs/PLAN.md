@@ -79,8 +79,8 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
    devices, cuts mid-upload recovered). The HAT's gateway, `aow-linkd`, built in AgOpenWeb-HAT
-   2026-10-25 (0.2.24) and benched. Next: its status on the HAT's ISOBUS page, an ESP32
-   gateway, a pairing key; a direct SocketCAN or USB adapter path for AgOpenWeb on the CM4 or a
+   2026-10-25 (0.2.24) and benched; its status on the HAT's ISOBUS page in 0.2.25. Next: an
+   ESP32 gateway, a pairing key; a direct SocketCAN or USB adapter path for AgOpenWeb on the CM4 or a
    PC is the host's (`Send` and `Receive`).
 6. **The terminal in AgOpenWeb** is the app's work and plan, in that repo (not written yet). What
    it needs from here is item 1. Rules agreed for it so far: a press is always followed by a

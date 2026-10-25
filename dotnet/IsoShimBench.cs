@@ -42,7 +42,7 @@ public static class IsoShimBench
     static void OnSend(int channel, uint id, ReadOnlySpan<byte> data, bool extended)
     {
         Interlocked.Increment(ref framesOut);
-        WatchEtp(id, data, outgoing: true);
+        WatchEtp(id, data, outgoing: true, 0);
         link!.Send(channel, id, data, extended);
     }
 
@@ -53,7 +53,7 @@ public static class IsoShimBench
         double now = clock.Elapsed.TotalMilliseconds;
         if (lastArrival >= 0 && now - lastArrival > maxGapMs) { maxGapMs = now - lastArrival; maxGapAtMs = now; }
         lastArrival = now;
-        WatchEtp(id, data, outgoing: false);
+        WatchEtp(id, data, outgoing: false, timeUs);
         Interlocked.Increment(ref framesIn);
     }
 
@@ -82,7 +82,9 @@ public static class IsoShimBench
     }
 
     // ETP connection management (PGN 0xC800): control byte 20 = request to send, 255 = abort.
-    static void WatchEtp(uint id, ReadOnlySpan<byte> d, bool outgoing)
+    // What comes from the bus carries the gateway's receive time (kernel, us, wrapping at 2^32),
+    // to match against a capture on the gateway (bench/out/frames-NAME.log).
+    static void WatchEtp(uint id, ReadOnlySpan<byte> d, bool outgoing, uint busUs)
     {
         if (((id >> 8) & 0x3FF00) != 0xC800 || d.Length < 1) return;
         int src = (int)(id & 0xFF), dst = (int)((id >> 8) & 0xFF);
@@ -93,12 +95,12 @@ public static class IsoShimBench
                 rtsBySource[src] = rtsBySource.TryGetValue(src, out int n) ? n + 1 : 1;
                 if (firstRtsMs < 0) firstRtsMs = clock.Elapsed.TotalMilliseconds;
                 uint size = BitConverter.ToUInt32(d.Slice(1, 4));
-                Note($"upload attempt from 0x{src:X2}: {size} bytes");
+                Note($"upload attempt from 0x{src:X2}: {size} bytes, bus time {busUs / 1e6:F6}");
             }
             else if (d[0] == 255)
             {
                 aborts++;
-                Note($"ETP abort {(outgoing ? "sent" : "received")}, reason {(d.Length > 1 ? d[1] : 0)}");
+                Note($"ETP abort {(outgoing ? "sent" : $"received (bus time {busUs / 1e6:F6})")}, reason {(d.Length > 1 ? d[1] : 0)}");
             }
         }
     }

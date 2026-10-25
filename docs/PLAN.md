@@ -144,6 +144,21 @@ user's fork, branch `vt-client-store-version-error` (chriskinal/AgIsoStack-plus-
 the client goes on to Connected after any Store Version error; a test fails without it),
 offered upstream as [#804](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/804). Implements already built keep the old behaviour, so the in-memory default stays.
 
+**In the transport layer, threaded use** (found here 2026-10-25, chasing a double request-to-send
+on the bench; still in upstream HEAD e932041): `TransportProtocolManager::protocol_transmit_message`
+adds the new session under `activeSessionsMutex`, releases it, then runs `update_state_machine` on
+it in the caller's thread; the stack's own thread can meanwhile run `update()` over the same
+session. Both see `SendRequestToSend` and both send the RTS, back to back. The receiver overwrites
+its session and answers twice, the sender aborts on the second CTS (reason 4), the transfer fails.
+`ExtendedTransportProtocolManager` does the same and adds the session to `activeSessions` with no
+lock at all while `update()` walks it. A stress program (two control functions on vcan, the
+application thread sending 100-byte TP messages while the hardware thread updates) doubled 19
+RTSs in 4,000, each a failed transfer; with the direct call removed (the RTS left to `update()`),
+none in 4,000, at about 3.5 ms a message. It bites any implement that sends from its own thread:
+`aow-hatd` (its ISOBUS thread) and upstream's examples (the VT client's worker), seen as a
+repeated upload of their pools. The wrapper runs the stack on one thread and never starts it.
+Not reported upstream yet.
+
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one
 thread). Also reported by us: #802 (above).

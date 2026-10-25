@@ -3,6 +3,8 @@
 # implement started on the gateway's other CAN interface, then wait for the terminal's verdict
 # and collect every log into out/NAME.txt.
 #   run.sh CLIENT NAME [IMPLEMENT]     NOSNIFF=1 skips the capture; STALL="AFTER FOR" cuts the link
+# The capture (sniff.py: every frame on both CAN channels) and a monitor client's record of what the
+# gateway sent out (aowlink_monitor.py) come back as out/frames-NAME.log and out/monitor-NAME.log.
 set -u
 . "$(dirname "$0")/env.sh"
 CLIENT=$1 NAME=$2 IMPL=${3:-VT3ExampleTarget}
@@ -11,9 +13,10 @@ F=$OUT/$NAME.txt
 GWENV="GW_DIR=$GW_DIR RELAY_PORT=$RELAY_PORT ${RELAY_IF:+RELAY_IF=$RELAY_IF} ${IMPL_IF:+IMPL_IF=$IMPL_IF}"
 g() { gw "$GWENV $GW_DIR/gateway.sh $1"; }
 
-gw "rm -f $GW_DIR/implement.log $GW_DIR/sniff.out $GW_DIR/stall.log"
+gw "rm -f $GW_DIR/implement.log $GW_DIR/sniff.out $GW_DIR/stall.log $GW_DIR/frames.log $GW_DIR/monitor.log"
 g relay >/dev/null
 [ -n "${NOSNIFF:-}" ] || gw "cd $GW_DIR; nohup python3 sniff.py 130 > sniff.out 2>&1 < /dev/null &"
+[ -n "${NOSNIFF:-}" ] || gw "cd $GW_DIR; nohup python3 aowlink_monitor.py 127.0.0.1 $RELAY_PORT monitor.log > monitor.out 2>&1 < /dev/null &"
 case $CLIENT in
   mac)
     (cd "$BENCH/../dotnet/console" && dotnet bin/Release/net10.0/IsoShimConsole.dll bench $RELAY_HOST $RELAY_PORT > "$F" 2>&1) &
@@ -47,11 +50,12 @@ g stop >/dev/null
   echo "--- relay"
   g clients | tail -2
   echo "--- sniff (frames, first seen s)"
-  gw "pkill -TERM -f '[s]niff.py'; sleep 1.5; cat $GW_DIR/sniff.out 2>/dev/null"
+  gw "pkill -TERM -f '[a]owlink_monitor.py'; pkill -TERM -f '[s]niff.py'; sleep 1.5; cat $GW_DIR/sniff.out 2>/dev/null"
   echo "--- implement"
   gw "grep -E 'VT\]|ETP|TP\]|rror|arn' $GW_DIR/implement.log | head -15"
   echo "--- stall"
   gw "cat $GW_DIR/stall.log 2>/dev/null"
 } >> "$F"
 gw "cp $GW_DIR/dump.log $GW_DIR/dump-$NAME.log 2>/dev/null"
+[ -n "${NOSNIFF:-}" ] || for f in frames monitor; do scp -q "$GATEWAY:$GW_DIR/$f.log" "$OUT/$f-$NAME.log" 2>/dev/null; done
 cat "$F"

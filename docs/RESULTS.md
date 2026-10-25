@@ -125,6 +125,14 @@ cleanly.
   So not one gateway's doing; the two arrive in one TCP batch, so the bench's times say nothing of
   their spacing on the bus. `aow-linkd` keeps no dump: a capture on the bus (a monitor client, or
   `candump` on `hatcan3`) is what would show whether `aow-hatd` sent the RTS twice.
+  **Explained 2026-10-25** (PLAN.md, upstream gaps: the transport layer in threaded use). Eight
+  iPad runs with a capture of both channels (`bench/out/frames-NAME.log`) and a monitor client's
+  record of what the gateway sent (`monitor-NAME.log`): in the eighth, the example implement's TP
+  request-to-send for its Store Version (`1CEC2680 102100051000e700`) is on the wire twice, 0.56 ms
+  apart (one frame's time), on both channels; the gateway passed on exactly what the bus carried.
+  The terminal answered each with a CTS, the implement aborted on the second, its Store Version
+  timed out and it reset and uploaded its pool again (the run passed, in 43 s). A race in the
+  stack's transport layer between the sending thread and its update thread, reproduced on vcan.
 - **Speed at 16 per DPO over a quiet link** (34 s, against about 22 s in process): part of the
   difference was how often the v1 terminal looked for frames (10 ms in the bench, 4 ms in the
   stack). v2 steps every 2 ms; not re-measured at 16 over the link.

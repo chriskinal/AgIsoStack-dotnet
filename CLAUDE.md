@@ -10,7 +10,7 @@ to continue it in its own repo).
 - **[docs/PLAN.md](docs/PLAN.md)** - decisions and why, known costs, what is next, the drawing
   boundary, upstream gaps
 - **[docs/TRANSPORT.md](docs/TRANSPORT.md)** - the gateway link: why TCP, what the protocol needs,
-  GVRET and the relay format, the timers, open questions
+  the CAN link protocol (ours, not GVRET), the timers, open questions
 - **[docs/BENCH.md](docs/BENCH.md)** - the dev bench: hardware, networks and how to put them
   back, measuring, gotchas
 - **[docs/RESULTS.md](docs/RESULTS.md)** - every measurement so far, and open observations

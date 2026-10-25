@@ -152,6 +152,7 @@ public static unsafe class IsoShimSpike
         ok &= RunInput(log);
         ok &= RunAlarms(log);
         ok &= VirtualTerminalTest.Run(log);
+        ok &= CanLinkTest.Run(log);
         if (ScreenDir != null) WriteScreens(log);
         log(ok ? "ALL PASS" : "SOME FAILED");
         return ok;

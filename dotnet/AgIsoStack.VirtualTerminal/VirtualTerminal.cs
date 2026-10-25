@@ -38,6 +38,10 @@ public sealed unsafe class VirtualTerminal : IDisposable
     Thread? thread;
     volatile bool stopping;
     bool closed; // under work's lock: no more calls are taken
+    // On the terminal's thread: keys and buttons pressed and not released, and those owed an abort
+    // when a gateway link comes back (held when it went, or pressed while it was down).
+    readonly HashSet<(bool Button, ushort Id)> held = new(), owed = new();
+    bool linkDown;
 
     public VirtualTerminal(VirtualTerminalOptions options)
     {
@@ -87,6 +91,9 @@ public sealed unsafe class VirtualTerminal : IDisposable
             running = this;
         }
         stopping = false;
+        held.Clear();
+        owed.Clear();
+        linkDown = false;
         lock (work) closed = false;
         var started = new TaskCompletionSource<int>();
         var t = new Thread(() => Run(started)) { IsBackground = true, Name = "VirtualTerminal" };
@@ -178,10 +185,58 @@ public sealed unsafe class VirtualTerminal : IDisposable
     // ---- the operator ----
 
     /// <summary>A soft key (Key object) of the shown implement. True: sent.</summary>
-    public Task<bool> SoftKeyAsync(ushort objectId, KeyState state) => InvokeAsync(() => isoshim_soft_key(objectId, (int)state) == 1);
+    public Task<bool> SoftKeyAsync(ushort objectId, KeyState state) => InvokeAsync(() => Key(false, objectId, state));
 
     /// <summary>A button on the shown mask. True: sent.</summary>
-    public Task<bool> ButtonAsync(ushort objectId, KeyState state) => InvokeAsync(() => isoshim_button(objectId, (int)state) == 1);
+    public Task<bool> ButtonAsync(ushort objectId, KeyState state) => InvokeAsync(() => Key(true, objectId, state));
+
+    bool Key(bool button, ushort id, KeyState state)
+    {
+        bool sent = (button ? isoshim_button(id, (int)state) : isoshim_soft_key(id, (int)state)) == 1;
+        var key = (button, id);
+        if (state is KeyState.Pressed or KeyState.Held)
+        {
+            if (sent) held.Add(key);
+            if (sent && linkDown) owed.Add(key);
+        }
+        else held.Remove(key);
+        return sent;
+    }
+
+    // ---- a gateway link (VirtualTerminalLink.Attach calls these) ----
+
+    /// <summary>The link to the bus is gone: what the terminal sends is lost until it is back.
+    /// Any thread.</summary>
+    public void LinkDown()
+    {
+        if (!IsRunning) return;
+        _ = InvokeAsync(() =>
+        {
+            linkDown = true;
+            owed.UnionWith(held);
+            return 0;
+        });
+    }
+
+    /// <summary>The link to the bus is back: every key or button held when it went, or pressed
+    /// while it was down, is sent as aborted (a press is always followed by a release). Any
+    /// thread.</summary>
+    public void LinkUp()
+    {
+        if (!IsRunning) return;
+        _ = InvokeAsync(() =>
+        {
+            linkDown = false;
+            foreach (var (button, id) in owed)
+            {
+                if (button) isoshim_button(id, (int)KeyState.Aborted);
+                else isoshim_soft_key(id, (int)KeyState.Aborted);
+                held.Remove((button, id));
+            }
+            owed.Clear();
+            return 0;
+        });
+    }
 
     /// <summary>Shows this implement, by its NAME. True: it is now the one shown.</summary>
     public Task<bool> ActivateAsync(ulong name) => InvokeAsync(() => isoshim_activate(name) == 1);

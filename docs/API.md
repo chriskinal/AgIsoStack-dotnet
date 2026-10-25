@@ -159,3 +159,23 @@ page; `WorkingSetsChanged`, `AlarmsChanged`, `Audio`, `Volume`, `AddressClaimed`
 store the terminal still stores, for as long as the process runs, because an upstream implement
 told "not stored" drops its connection (PLAN.md, upstream gaps). One terminal per process: the
 native stack is one.
+
+## The gateway link
+
+`CanLink` is the client end of the CAN link protocol (docs/TRANSPORT.md section 5): one TCP
+connection to a gateway on the bus. It says hello, keeps a heartbeat both ways, drops the link
+after 1 s of silence, and connects again on its own (at once, then every 250 ms; each attempt
+gives up after 500 ms). `Send` may be called from any thread and returns at once; a frame sent
+while the link is down is dropped and counted (`FramesDropped`), never held for the next link.
+Its events come on the link's own thread: `FrameReceived` (channel, id, data, extended, the
+gateway's receive time in µs), `Connected` (the gateway's name and channels), `Disconnected`
+(why: lost, version, busy, timeout, protocol error, shutting down), `StatusReceived` (each
+bus's state, error counters and drops) and `RoundTrip` (ms, from each heartbeat). `Role` monitor
+receives only.
+
+`vt.Attach(link)` wires a terminal to it: frames from the bus to `Receive`, and the link's state
+to `LinkDown` and `LinkUp`; the terminal's `Send` is `link.Send`. While the link is down the
+terminal keeps running and its frames are lost; the implements decide by their own timeouts (3 s).
+When it is back, every soft key or button that was held when it went, or pressed while it was
+down, is sent as aborted, so a press is always followed by a release.
+

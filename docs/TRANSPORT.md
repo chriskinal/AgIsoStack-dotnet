@@ -3,8 +3,9 @@
 How an implement bus reaches a stack that is not wired to it. The terminal (AgIsoStack++'s VT
 server through this wrapper) runs in an application such as AgOpenWeb, on a tablet, a PC or a
 Linux box; a **gateway** sits on the bus and carries every CAN frame to it and back. Nothing here
-is built beyond the bench relay. Decisions so far were taken on 2026-10-23/24 in the AgOpenWeb-HAT
-work that started this repo.
+built so far is the protocol of section 5: its client in the package, its reference gateway and
+checker in `bench/`. Decisions so far were taken on 2026-10-23/24 in the AgOpenWeb-HAT work that
+started this repo.
 
 ## 1. The shape
 
@@ -85,7 +86,8 @@ an ESP32 gains nothing.
   binary mode, but no heartbeat or bus status. Adopting it would let existing ESP32 gateways and
   SavvyCAN work; the gaps above need a place either way.
 - **Cannelloni**: UDP, set aside (section 2).
-- **The bench relay's format** (`bench/can_tcp_relay.py`), little-endian records:
+- **The bench relay's format** (its first relay, replaced by section 5's gateway), little-endian
+  records:
 
   | Type | Record | Size |
   |---|---|---|
@@ -100,7 +102,7 @@ lifetime (a hello, a heartbeat, a rule for when it is dead) and a bus status. Ev
 would be an addition only our own gateways and clients understood, and the GVRET servers we have
 would need changing to transmit anyway, so the compatibility it seems to offer is not there.
 
-## 5. The protocol, version 1 (proposed 2026-10-24, not yet built)
+## 5. The protocol, version 1 (approved and built 2026-10-24)
 
 A small binary protocol over one TCP connection, MIT, written so an ESP32 can implement it in a
 few hundred lines. Working name: **CAN link** (the name is the user's call). The bench relay's
@@ -133,6 +135,11 @@ Each side sends HEARTBEAT every 100 ms, whatever else it sends. **A side that ha
 nothing for 1,000 ms closes the connection at once, discarding what it has not yet sent**
 (`SO_LINGER` 0, so the kernel drops its send buffer), and the client starts a new one.
 
+TCP stretches a cut: it resends lost data after 200 ms, then 400, 800 (doubling), so data lost
+early in a cut of about half a second or more arrives only after 1 s of silence and the link is
+remade. That costs an implement in use nothing (it allows 3 s, and the link is back within about
+half a second of the cut ending); an upload is lost to any cut over 750 ms anyway (ETP T1).
+
 That one rule is also the stale-frame limit (section 3, item 6), with no clock shared between
 the two ends. Frames and heartbeats travel in one ordered stream, so a frame held up by a stall
 holds up the heartbeats behind it. A stall shorter than 1 s is passed through: everything arrives
@@ -141,7 +148,8 @@ connection on both sides, and what it held is never delivered. On the bench a cu
 aborted an upload anyway, so nothing that could have survived is lost. A frame never reaches the
 bus or the terminal more than about 1.1 s after it was sent.
 
-**Reconnecting.** The client connects again at once, then every 250 ms until it gets in. A new
+**Reconnecting.** The client connects again at once, then every 250 ms until it gets in, each
+attempt given 500 ms (so one made during a cut does not hold up the next once it is over). A new
 connection starts clean: the gateway drops whatever was queued from the bus before it, and the
 client sends nothing that was meant for the old one.
 
@@ -206,13 +214,15 @@ point. A pairing key in HELLO is open (section 7) before a gateway joins a share
 
 ### Built against it
 
-- **The client**, in this repository's package beside `VirtualTerminal`: connect, hello,
-  heartbeat, reconnect, frames to and from the terminal, the link's state as events.
-- **The reference gateway**: the bench relay brought up to version 1 (Python first, as now; C++
-  for Linux once settled). The bench tests it: cuts below and above 1 s, reconnect mid-upload, a
-  second client, bus-off.
-- **The HAT's gateway service** in AgOpenWeb-HAT (its `docs/PLAN_VT.md`), and later the ESP32
-  gateway.
+- **The client**: `CanLink` in the package (docs/API.md), with `vt.Attach(link)` for a terminal.
+  The self-test's ninth run tests it against a scripted gateway, on every platform.
+- **The reference gateway**: `bench/canlink_gateway.py` (Python; C++ for Linux later). Any
+  number of SocketCAN interfaces, one control client, monitors, STATUS from `ip -details`.
+- **The checker**: `bench/canlink_check.py HOST [PORT]` tests any gateway against this section:
+  hello, status, heartbeat rate, busy, monitors, the silence rule, versions, bad input, unknown
+  messages. The reference gateway passes on the CM4 and in a container.
+- **To build**: the HAT's gateway service in AgOpenWeb-HAT (its `docs/PLAN_VT.md`; the checker
+  is its test), and the ESP32 gateway.
 
 ## 6. The timers that matter (ISO 11783-3 and -6)
 
@@ -228,12 +238,10 @@ time over a link: about 84 batches at 255 for a 150 kB pool, about 1,340 at the 
 
 ## 7. Open
 
-1. Version 1 above, for the user's approval: the 1 s silence rule, the port, the name.
-2. A pairing key in HELLO, for gateways on networks that are not the user's own.
-3. **Disconnect and reconnect mid-upload and in use**: to test once the client reconnects (the
-   bench client does not yet).
-4. What the gateway does with a second client.
-5. Tablet power saving: it can hold packets for a few hundred milliseconds whatever the transport.
-6. The field's worst case is not the bench's: a metal cab, a tablet behind glass, an ESP32's
+1. A pairing key in HELLO, for gateways on networks that are not the user's own.
+2. Bus-off and a second CAN channel on real hardware: built, not yet tested (the bench has one
+   link channel; vcan has no error states).
+3. Tablet power saving: it can hold packets for a few hundred milliseconds whatever the transport.
+4. The field's worst case is not the bench's: a metal cab, a tablet behind glass, an ESP32's
    weaker radio, 2.4 GHz only. Expect long stalls and dropped connections more than a slow steady
    round trip.

@@ -79,13 +79,16 @@ access point plus netem when runs have to be compared.
 
 ## Running
 
-`bench/devices.env` (from `devices.env.example`), then `bench/deploy.sh` copies the relay,
-capture, checks, netem, `gateway.sh`, the pool and the built implements to `~/vtbench` on the
-gateway. `bench/run.sh CLIENT NAME [IMPLEMENT]` runs one: relay up, the terminal app started,
+`bench/devices.env` (from `devices.env.example`), then `bench/deploy.sh` copies the CAN link
+gateway (`canlink_gateway.py`) and its checker, the capture, checks, netem, `gateway.sh`, the pool
+and the built implements to `~/vtbench` on the gateway (`gateway.sh check` runs the checker
+there). `bench/run.sh CLIENT NAME [IMPLEMENT]` runs one: the gateway up, the terminal app started,
 the implement started 4 s later, the verdict awaited, every log gathered into `bench/out/NAME.txt`
 and the relay's frame dump kept on the gateway as `dump-NAME.log`. `sweep.sh` runs N under one
 impairment, `verify.sh` N without the capture with a frame-loss check, `selftest.sh` the
-in-process self-test on the tablets.
+in-process self-test on the tablets. `local.sh` is the bench with no hardware: the gateway,
+the implement and the terminal in one Linux container on a virtual CAN bus (vcan), link cuts
+by netem on loopback.
 
 **The test implements** (`bench/implement/build.sh`, Linux arm64; on the Mac in AgOpenWeb-HAT's
 `aow-hat-dev` container): upstream's VT example at 16 packets per DPO (`VT3ExampleTarget`) and
@@ -97,10 +100,12 @@ with NAME function code 16 as the one under test.
 ## Measuring
 
 - **The terminal's own report** (`IsoShimBench`): upload attempts per source (request-to-send
-  frames aimed at it), ETP aborts with their reasons, ping round trip percentiles, the longest gap
-  between arrivals, the stack's warnings.
-- **The relay** logs every frame both ways (`dump.log`: time, direction, id, data) and its stats:
-  frames each way, `can_tx_retry`, `can_rx_dropped` (from `SO_RXQ_OVFL`).
+  frames aimed at it), ETP aborts with their reasons, round trip percentiles (from the link's
+  heartbeats, every 100 ms), the longest gap between arrivals, link drops and the bus status when
+  it is not clean, the stack's warnings.
+- **The gateway** logs every frame of the control client's link both ways (`dump.log`: time,
+  direction, id, data), and per client its stats: frames each way, heartbeats, writes,
+  `can_tx_retry`. Receive overflow (`SO_RXQ_OVFL`) goes to the client in STATUS.
 - **The capture** (`sniff.py`): every frame on both CAN interfaces with kernel timestamps
   (`SO_TIMESTAMP`, 29) and drop counts (`SO_RXQ_OVFL`, 40; Python has neither constant), 4 MB
   receive buffer. Start it before the client, or early faults are missed.

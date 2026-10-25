@@ -146,3 +146,36 @@ round trip at 255; 45-55 s to parse at 16, on a worse Wi-Fi day). The first runs
 pool store the terminal answered Store Version with an error, and upstream's VT client then
 resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
 now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).
+
+## 2026-10-24: the CAN link protocol (version 1) on the bench
+
+The terminal through `CanLink` (attached to `VirtualTerminal`) and the reference gateway
+(`bench/canlink_gateway.py`) on the CM4, home Wi-Fi. The gateway passes `canlink_check.py` on the
+CM4 (and reads the bus's 250 kbit/s from the kernel); the self-test's link run passes on the Mac,
+the iPad, the Galaxy Tab, Linux arm64 and x64, and Windows x64.
+
+Clean runs, one each, every one passed with the link up throughout, one upload attempt per
+implement and no aborts:
+
+| Packets per DPO | | Mac | Galaxy Tab | iPad |
+|---|---|---|---|---|
+| 255 | first request-to-send to pool parsed | 18.4 s | 14.8 s | 14.2 s |
+| 255 | start to soft key round trip | 19.7 s | 20.2 s | 18.5 s |
+| 16 | first request-to-send to pool parsed | | 39.2 s | 37.9 s |
+
+Round trip from the heartbeats p50 / p99: Mac 6 / 136 ms, Galaxy Tab 9-16 / 23-88, iPad 7-9 /
+19-23.
+
+Link cuts (netem, 100 % loss both ways on the CM4's Wi-Fi) 5 s after the implement starts,
+mid-upload, Galaxy Tab, 255 per DPO:
+
+| Cut | Link | Passed in | What happened |
+|---|---|---|---|
+| 0.4 s | stayed up | 20.6 s | ridden through; `aow-hatd`'s small upload timed out (ETP, 750 ms) and was redone |
+| 1.5 s | dropped after 1 s of silence, back 1.05 s later | 26.9 s | both uploads redone |
+| 5 s | dropped after 1 s, back 0.4 s after the cut ended | 36.3 s | both uploads redone; as the old relay (36.4-37.3 s) |
+
+The same in a container with no hardware (`bench/local.sh`, vcan, loopback cuts): a 0.8 s cut
+also remade the link, because TCP's retransmission backoff (200 ms, then doubling) turned it into
+more than 1 s of silence (TRANSPORT.md section 5). In every case nothing older than the cut was
+delivered afterwards, which the old relay could not promise.

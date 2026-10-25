@@ -72,25 +72,32 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 ```csharp
 using AgIsoStack;
 
+var link = new CanLink("192.168.4.1", name: "AgOpenWeb");             // a CAN link gateway on the bus
 var vt = new VirtualTerminal(new VirtualTerminalOptions
 {
-    Send = (channel, id, data, extended) => gateway.Send(id, data),   // the terminal's frames out
+    Send = link.Send,                                                  // the terminal's frames out
     Store = new FilePoolStore(Path.Combine(appData, "pools")),         // stored pool versions
 });
+vt.Attach(link);                                  // frames in; keys held across a link drop released
 vt.Message += json => page.Post(json);           // screens, editors, working sets, alarms: as JSON
 vt.Image += image => page.PostImage(image);      // pictures, RGBA, before the screens that use them
 vt.AlarmsChanged += alarms => ShowOverAnyCard(alarms);
+link.Disconnected += (why, text) => ShowBusGone(why);   // reconnects on its own
 vt.Start();
-gateway.FrameReceived += (id, data) => vt.Receive(id, data);           // frames in, any thread
+link.Start();
 // The page's taps and entries:
 await vt.SoftKeyAsync(5000, KeyState.Pressed);
 await vt.SelectAsync(9000, open: true);
 var result = await vt.SetNumberAsync(9000, 80);   // Entered, Invalid, NotAnInput
+link.Stop();
 vt.Stop();
 ```
 
 The terminal has one thread of its own: it runs the stack and raises every event, in order;
 calls come from any thread. One terminal per process. Details in [docs/API.md](docs/API.md).
+Without a gateway (SocketCAN, a USB adapter), `Send` and `vt.Receive(id, data, extended,
+channel)` carry the frames instead; `vt.LinkDown()` and `vt.LinkUp()` are for any link that can
+drop.
 
 ## Test
 
@@ -106,7 +113,10 @@ checking what the implement hears, what is refused and what the screen shows. Th
 the implement's audio and volume commands reach the host. The eighth drives the C# class,
 `VirtualTerminal`, as a host would: two sessions with one store (the second loads the pool
 the first stored), input results, a call from inside a handler, stop from either thread, and
-every event on the terminal's one thread.
+every event on the terminal's one thread. The ninth puts `CanLink` between the terminal and the
+implement, through a scripted gateway on loopback: the hello, the pool over the link, a gateway
+gone silent (dropped after 1 s, back at once), refusals while busy, and a soft key held when the
+link went, aborted when it is back.
 
 With a pool file, `screens` uploads that pool instead and has the test implement show each of its
 data and alarm masks in turn. `bench/pools.sh` does that for every pool in `testpools/`: our
@@ -125,17 +135,22 @@ bench/selftest.sh linux windows   # Linux arm64 and x64 in Docker; Windows x64 i
 ```
 
 **Bench** (`bench/`): the terminal on a tablet or the Mac, a Linux box with two CAN interfaces
-wired together as the gateway. `can_tcp_relay.py` carries one interface's frames over TCP to the
-terminal; upstream's VT example implement runs on the other (`bench/implement/build.sh`).
-`netem.sh` delays, drops or cuts the relay's traffic in both directions.
+wired together as the gateway. `canlink_gateway.py`, the reference CAN link gateway
+(docs/TRANSPORT.md section 5), carries one interface's frames over TCP to the terminal; upstream's
+VT example implement runs on the other (`bench/implement/build.sh`). `netem.sh` delays, drops or
+cuts the link's traffic in both directions. `canlink_check.py` checks any gateway against the
+protocol. `local.sh` runs the whole bench in one Linux container on a virtual CAN bus, with link
+cuts if asked: no hardware.
 
 ```sh
 cp bench/devices.env.example bench/devices.env   # the gateway, the tablets
-bench/deploy.sh                                  # relay, capture, netem and implements to the gateway
+bench/local.sh VT3Example255 5 1.5                # no hardware: one run, the link cut for 1.5 s at 5 s
+CHECK=1 bench/local.sh                           # and the gateway's conformance check
+bench/deploy.sh                                  # gateway, checker, capture, netem, implements to the CM4
 bench/run.sh ios first VT3Example255             # one run, everything in bench/out/first.txt
 bench/sweep.sh ios VT3Example255 3 d200 "delay 100ms 30ms"
 bench/sweep.sh ios VT3Example255 3 cut5 none 8 5 # a 5 s link cut, 8 s after the implement starts
 ```
 
-`bench/run.sh` takes `mac`, `android` or `ios`. The gateway's CAN interfaces are `hatcan2` (relay)
+`bench/run.sh` takes `mac`, `android` or `ios`. The gateway's CAN interfaces are `hatcan2` (the link)
 and `hatcan3` (implement) unless `RELAY_IF` and `IMPL_IF` say otherwise.

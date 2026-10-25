@@ -75,11 +75,12 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.
    Keep `Terminal::~Terminal`'s join until a pin carries the fix (harmless after it). Then offer
    the wrapper.
-5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24);
-   version 1 written up in TRANSPORT.md section 5, awaiting approval. Then the client in the
-   package (connect, hello, heartbeat, reconnect), a reference gateway
-   (the bench relay grown up, in C++ for Linux) and an ESP32 one; test disconnect and reconnect
-   mid-upload. The HAT's gateway service is built in AgOpenWeb-HAT against this protocol.
+5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24).
+   Version 1 approved and built the same day: `CanLink` in the package, the reference gateway
+   and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
+   devices, cuts mid-upload recovered). Next: the HAT's gateway service in AgOpenWeb-HAT, an ESP32
+   gateway, a pairing key; a direct SocketCAN or USB adapter path for AgOpenWeb on the CM4 or a
+   PC is the host's (`Send` and `Receive`).
 6. **The terminal in AgOpenWeb** is the app's work and plan, in that repo (not written yet). What
    it needs from here is item 1. Rules agreed for it so far: a press is always followed by a
    release (also across a link cut); one operator at a time; an unsupported object is drawn as a

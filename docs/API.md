@@ -6,7 +6,7 @@ use them together is in [GUIDE.md](GUIDE.md).
 
 Contents: [VirtualTerminalStack](#virtualterminalstack) · [VirtualTerminal](#virtualterminal) ·
 [Options](#virtualterminaloptions) · [Types](#types) · [Pool stores](#pool-stores) ·
-[AowLink](#aowlink) · [Messages](#messages) · [The draw list](#the-draw-list) ·
+[AowLink](#aowlink) · [SlcanLink](#slcanlink) · [Messages](#messages) · [The draw list](#the-draw-list) ·
 [The C interface](#the-c-interface) · [Design](#design)
 
 All types are in namespace `AgIsoStack`; the raw interface is `AgIsoStack.Interop.IsoShim`.
@@ -186,6 +186,44 @@ the link's own thread.
 `static void VirtualTerminalLink.Attach(this VirtualTerminalStack stack, AowLink link)`: frames from
 the link to `Receive`, `Connected` to `LinkUp`, `Disconnected` to `LinkDown`. The terminals' frames
 go out by the options: `Send = link.Send`.
+
+## SlcanLink
+
+`public sealed class SlcanLink : IDisposable`. A CAN adapter on this device that speaks slcan
+(Lawicel ASCII), through a serial port. Its events come on the link's own thread.
+
+| Member | |
+|---|---|
+| `SlcanLink(string portName, int bitrate = 250000)` | A port from `SerialPorts.List()`. Bitrates: 10, 20, 50, 100, 125, 250, 500, 800 kbit/s, 1 Mbit/s (`ArgumentException` otherwise). |
+| `SlcanLink(Func<ISerialPort> open, int bitrate = 250000, string portName = "")` | Any byte port: `open` makes a new, unopened one each time the link opens. |
+| `void Start()` | Opens the adapter on its own thread, and again whenever it goes: every second while it can't (not plugged in, no permission yet). On opening: `C` (close), `V` (version), `S5` (bitrate), `O` (open). |
+| `void Stop()` | `C` (off the bus), closes the port, ends the thread. |
+| `void Send(int channel, uint id, ReadOnlySpan<byte> data, bool extended)` | As `AowLink.Send`: any thread, returns at once, dropped and counted while down. Written as `T`/`t` lines. |
+| `bool IsConnected`, `int Bitrate`, `long FramesDropped` | |
+| `string LastError` | Why the last attempt to open failed; "" once open. |
+
+| Event | |
+|---|---|
+| `LinkFrameHandler FrameReceived` | Channel 0; `timeUs` is this link's receive time. `T` and `t` lines; replies, remote frames and anything else are not frames. |
+| `Action<string> Connected` | Open and on the bus: the port's name, and the adapter's version reply if it gave one. |
+| `Action<LinkCloseReason, string> Disconnected` | `Lost` (the port went: unplugged) or `ShuttingDown`. |
+| `Action<Exception> HandlerFailed` | |
+
+`static void VirtualTerminalLink.Attach(this VirtualTerminalStack stack, SlcanLink link)`: as for
+`AowLink`. No bus errors are reported, and there is no heartbeat: the link is down only when the
+port is.
+
+**Ports.** `static IReadOnlyList<string> SerialPorts.List()`: macOS `/dev/cu.*` (not Bluetooth or
+the debug console), Windows COM ports, Linux `/dev/ttyACM*` and `/dev/ttyUSB*`, Android USB
+serial devices as `usb:VVVV:PPPP` (vendor and product id, hex), iOS none.
+`static ISerialPort SerialPorts.Get(string name)`: that port, unopened (iOS:
+`PlatformNotSupportedException`). Desktop ports are `SystemSerialPort` (System.IO.Ports, 115200
+baud, DTR and RTS on); Android's are `AndroidUsbSerialPort` (CDC-ACM through the USB host API;
+opening asks the user for permission once, failing until it is given).
+
+`public interface ISerialPort : IDisposable`: `void Open()` (throws if it can't), `int Read(byte[]
+buffer, int offset, int count)` (waits about 100 ms; 0 for nothing yet; throws once the port is
+gone), `void Write(byte[] buffer, int offset, int count)`.
 
 ## Messages
 

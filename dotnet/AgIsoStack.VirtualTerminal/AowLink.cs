@@ -49,7 +49,7 @@ public delegate void LinkFrameHandler(int channel, uint id, ReadOnlySpan<byte> d
 /// <summary>
 /// A link to a CAN gateway. Frames from the bus come through <see cref="FrameReceived"/> on the
 /// link's own thread, as do the other events; <see cref="Send"/> may be called from any thread.
-/// For a <see cref="VirtualTerminalStack"/>, <see cref="VirtualTerminalLink.Attach"/> wires the two.
+/// For a <see cref="VirtualTerminalStack"/>, <see cref="VirtualTerminalLink.Attach(VirtualTerminalStack, AowLink)"/> wires the two.
 /// </summary>
 public sealed class AowLink : IDisposable
 {
@@ -422,7 +422,7 @@ public sealed class AowLink : IDisposable
     }
 }
 
-/// <summary>A terminal on a gateway link.</summary>
+/// <summary>Terminals on a link to the bus: a gateway, or an adapter on this device.</summary>
 public static class VirtualTerminalLink
 {
     /// <summary>Wires the terminals to a link: frames from the bus to the stack, and the link's
@@ -430,6 +430,16 @@ public static class VirtualTerminalLink
     /// (so a key held when the link went is released when it comes back). The terminals' frames go
     /// out through the options: <c>Send = link.Send</c>.</summary>
     public static void Attach(this VirtualTerminalStack stack, AowLink link)
+    {
+        link.FrameReceived += (channel, id, data, extended, _) => stack.Receive(id, data, extended, channel);
+        link.Connected += _ => stack.LinkUp();
+        link.Disconnected += (_, _) => stack.LinkDown();
+    }
+
+    /// <summary>Wires the terminals to an slcan adapter on this device, as for a gateway link:
+    /// frames both ways, and the adapter coming and going (unplugged) as the link's state. The
+    /// terminals' frames go out through the options: <c>Send = link.Send</c>.</summary>
+    public static void Attach(this VirtualTerminalStack stack, SlcanLink link)
     {
         link.FrameReceived += (channel, id, data, extended, _) => stack.Receive(id, data, extended, channel);
         link.Connected += _ => stack.LinkUp();

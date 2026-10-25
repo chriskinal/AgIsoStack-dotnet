@@ -20,6 +20,11 @@ implement ── CAN ── gateway ── TCP over Wi-Fi, Ethernet or loopback 
 | An ESP32 with a CAN transceiver, its own Wi-Fi access point | The DIY gateway, SolSteer's arrangement; firmware not written |
 | An AgOpenGPS AiO board (Teensy) | Its GVRET is sniff-only (section 4); changing that firmware is for its maintainers, not this project |
 
+Or no gateway at all: a CAN adapter plugged into the tablet or PC, speaking slcan
+(`SlcanLink`, a CANable with its stock firmware and other serial adapters): the USB cable is the
+link, on Windows, macOS, Linux and Android (USB host), not iOS. It has no heartbeat and reports no
+bus errors; unplugging is its link cut.
+
 When the application runs on the gateway itself (AgOpenWeb headless on the CM4), it can connect
 to the gateway on loopback, so the code path is the same everywhere; opening SocketCAN directly
 from .NET is the alternative.

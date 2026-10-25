@@ -41,6 +41,10 @@
     <None Include="$(Native)build-ios/libisoshim-all.a" Condition="Exists('$(Native)build-ios/libisoshim-all.a')" Pack="true" PackagePath="runtimes/ios-arm64/native/" Visible="false" />
     <None Include="AgIsoStack.VirtualTerminal.targets" Pack="true" PackagePath="buildTransitive/" />
   </ItemGroup>
+  <!-- Serial ports for slcan adapters on the desktop (Android has its own USB serial port). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+  </ItemGroup>
   <!-- A desktop app referencing this project: each desktop library that is built, next to it
        (their names differ; Linux: the build machine's architecture). An app built for another
        machine takes the package, which has every one under runtimes/RID/native/. -->

@@ -120,6 +120,11 @@ cleanly.
   session, `aow-hatd` aborted with reason 4, and its third attempt worked about 1 s later. Seen
   once; that run's relay dump was overwritten. Relay dumps are now kept per run
   (`dump-NAME.log` on the gateway), so look again if it recurs.
+  **Recurred 2026-10-25** through `aow-linkd` (iPad again, the first run of four, 1 ms apart, the
+  same overwrite and abort, back on the third attempt), and not in two reruns of the same case.
+  So not one gateway's doing; the two arrive in one TCP batch, so the bench's times say nothing of
+  their spacing on the bus. `aow-linkd` keeps no dump: a capture on the bus (a monitor client, or
+  `candump` on `hatcan3`) is what would show whether `aow-hatd` sent the RTS twice.
 - **Speed at 16 per DPO over a quiet link** (34 s, against about 22 s in process): part of the
   difference was how often the v1 terminal looked for frames (10 ms in the bench, 4 ms in the
   stack). v2 steps every 2 ms; not re-measured at 16 over the link.
@@ -158,7 +163,21 @@ on the CM4 and in a container, and reads the bus's 250 kbit/s from rtnetlink.
 | 255 per DPO | 19.1 s | 20.3 s | 11 / 25 ms | up throughout | 24,439 / 314 |
 | 16 per DPO | 46.0 s | 47.2 s | 10 / 22 ms | up throughout | 26,921 / 1,594 |
 
-One upload attempt per implement (0x80, and `aow-hatd`'s own status screen from 0xF7, which found
+The tablets the same day (0.2.26, the gateway switched on from the ISOBUS page, listening on
+every network), test apps rebuilt for the AOW link name (their self-tests pass):
+
+| Terminal | Implement | First request-to-send to pool parsed | Passed in | Round trip p50 / p99 |
+|---|---|---|---|---|
+| iPad | 255 per DPO | 17.6 s (19.0, 18.8 in two reruns) | 18.7 s | 13 / 31 ms |
+| iPad | 16 per DPO | 42.3 s | 46.5 s | 10 / 22 ms |
+| Galaxy Tab | 255 per DPO | 14.4 s | 20.1 s | 12 / 30 ms |
+| Galaxy Tab | 16 per DPO | 40.5 s | 46.0 s | 10 / 23 ms |
+
+All with the link up throughout. On the iPad's first 255 run `aow-hatd`'s status screen (0xF7)
+needed three attempts (open observations: two RTS 1 ms apart, as on 2026-10-24 with the relay);
+every other run one attempt per implement, no aborts.
+
+On the Mac: one upload attempt per implement (0x80, and `aow-hatd`'s own status screen from 0xF7, which found
 the terminal through the gateway on the shared `hatcan2`), no ETP aborts, no frames dropped either
 way. As the reference gateway's runs (255 per DPO, Mac: 18.4 s, and 17.9 s before the protocol).
 In a container (`bench/local.sh` with `GATEWAY=`): the same run in 8.7 s, and a 1.5 s cut

@@ -695,7 +695,7 @@ bool send_can_message_frame_to_hardware(const CANMessageFrame &frame) {
 
 extern "C" {
 
-int32_t isoshim_version(void) { return 4; }
+int32_t isoshim_version(void) { return 5; }
 
 int32_t isoshim_vt_start(const isoshim_vt_config *config, const isoshim_host *host) {
 	if (!config || !host || !host->send || !host->event || !host->message) return -1;
@@ -890,6 +890,30 @@ int32_t isoshim_set_string(uint16_t objectId, const char *utf8, int32_t len) {
 	const int result = g_terminal->setString(objectId, std::string(utf8, static_cast<std::size_t>(len)));
 	flushTransmit();
 	return result;
+}
+
+int32_t isoshim_link_up(void) {
+	if (!g_terminal || !g_serverCf) return 0;
+	// Our own claim first: one sent while the link was down never reached the implements, which
+	// then ignore a terminal whose NAME they don't know at its address. (The stack sends it only
+	// when it claims, or on a request it hears; it never hears its own.)
+	// Sent as the stack would (priority 6, PGN 0xEE00 to everyone), through the hardware hook.
+	bool sent = true;
+	if (g_serverCf->get_address_valid()) {
+		isobus::CANMessageFrame frame{};
+		frame.channel = 0;
+		frame.identifier = (6u << 26) | (static_cast<std::uint32_t>(isobus::CANLibParameterGroupNumber::AddressClaim) << 8) |
+		  (static_cast<std::uint32_t>(isobus::BROADCAST_CAN_ADDRESS) << 8) | g_serverCf->get_address();
+		frame.isExtendedFrame = true;
+		frame.dataLength = 8;
+		const std::uint64_t name = g_serverCf->get_NAME().get_full_name();
+		for (std::size_t i = 0; i < 8; i++) frame.data[i] = static_cast<std::uint8_t>(name >> (8 * i));
+		sent = isobus::send_can_message_frame_to_hardware(frame);
+	}
+	// Then everyone else's: implements already on the bus whose claims we never heard.
+	sent = isobus::CANNetworkManager::CANNetwork.send_request_for_address_claim(0) && sent;
+	flushTransmit();
+	return sent ? 1 : 0;
 }
 
 int32_t isoshim_escape(void) {

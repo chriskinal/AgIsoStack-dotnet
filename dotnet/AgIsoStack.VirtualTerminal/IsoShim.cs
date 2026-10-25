@@ -63,6 +63,7 @@ public static unsafe class IsoShim
     [DllImport(Lib)] public static extern int isoshim_set_number(ushort objectId, uint value);
     [DllImport(Lib)] public static extern int isoshim_set_string(ushort objectId, byte* utf8, int len);
     [DllImport(Lib)] public static extern int isoshim_escape();
+    [DllImport(Lib)] public static extern int isoshim_link_up();
 
     public static int SetString(ushort objectId, string text)
     {

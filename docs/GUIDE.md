@@ -181,7 +181,10 @@ adapter.FrameReceived += (id, data, extended) => vt.Receive(id, data, extended);
   the frame and return.
 - Deliver received frames promptly, in order. Hold-ups of more than a few hundred milliseconds
   make implements time out a transfer.
-- If your link can drop, call `vt.LinkDown()` when it goes and `vt.LinkUp()` when it is back.
+- If your link can drop, call `vt.LinkDown()` when it goes and `vt.LinkUp()` when it is up,
+  the first time too: the terminal then sends its address claim again and asks the bus for
+  every address claim. Both go out at start, possibly before the link is up, and a terminal and
+  an implement that never heard each other's claim don't talk.
 
 ## The page
 

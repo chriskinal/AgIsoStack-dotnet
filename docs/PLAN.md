@@ -138,8 +138,8 @@ cannot store pools never keeps an upstream implement (found on the bench, 2026-1
 optional, so an error should leave it connected). The C# class keeps pools in memory when the host
 gives no store; the raw interface with no save callback still answers "not stored". Fixed on the
 user's fork, branch `vt-client-store-version-error` (chriskinal/AgIsoStack-plus-plus, 853083b:
-the client goes on to Connected after any Store Version error; a test fails without it), not yet
-offered upstream. Implements already built keep the old behaviour, so the in-memory default stays.
+the client goes on to Connected after any Store Version error; a test fails without it),
+offered upstream as [#804](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/804). Implements already built keep the old behaviour, so the in-memory default stays.
 
 Two more espVT found are not ours: the single-producer transmit queue (PR #793; the wrapper does
 not use that queue) and the unlocked working-set list (the wrapper runs the server on one

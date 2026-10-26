@@ -106,7 +106,9 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
    devices, cuts mid-upload recovered). The HAT's gateway, `aow-linkd`, built in AgOpenWeb-HAT
-   2026-10-25 (0.2.24) and benched; its status on the HAT's ISOBUS page in 0.2.25. No pairing key
+   2026-10-25 (0.2.24) and benched; its status on the HAT's ISOBUS page in 0.2.25. Moved here
+   2026-10-26 as the Linux gateway (`gateway/linux`, MIT by its author), its report to the HAT
+   now JSON (`--status`); the HAT builds it from here. No pairing key
    (decided 2026-10-25: the machine network is trusted, TRANSPORT.md Security). Finding gateways
    by DNS-SD: `AowLinkBrowser` (2026-10-25); on iOS it uses `NSNetServiceBrowser`, deprecated
    since iOS 15 but working, because Network.framework's `NWBrowser` gives no address without

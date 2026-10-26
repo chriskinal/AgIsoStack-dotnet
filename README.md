@@ -44,6 +44,7 @@ native/build.sh android    # native/build-android-ABI/libisoshim.so (arm64-v8a, 
 native/build.sh linux      # native/build-linux-RID/libisoshim.so (x64, arm64; on a Mac in Docker)
 native/build.sh windows    # native/build-windows/isoshim.dll (x64; llvm-mingw in Docker)
 cd dotnet/SharpIsoTerm && dotnet pack -c Release -o OUT   # the package
+cmake -S gateway/linux -B build-gateway && cmake --build build-gateway   # aow-linkd, the Linux gateway
 ```
 
 The package (`net10.0`, `net10.0-ios`, `net10.0-android`) takes each native library that is
@@ -162,7 +163,8 @@ wired together as the gateway. `aowlink_gateway.py`, the reference AOW link gate
 (docs/TRANSPORT.md section 5), carries one interface's frames over TCP to the terminal; upstream's
 VT example implement runs on the other (`bench/implement/build.sh`). `netem.sh` delays, drops or
 cuts the link's traffic in both directions. `aowlink_check.py` checks any gateway against the
-protocol. `local.sh` runs the whole bench in one Linux container on a virtual CAN bus, with link
+protocol. The gateway that ships is `aow-linkd` ([gateway/README.md](gateway/README.md)), which
+the HAT runs. `local.sh` runs the whole bench in one Linux container on a virtual CAN bus, with link
 cuts if asked: no hardware.
 
 ```sh

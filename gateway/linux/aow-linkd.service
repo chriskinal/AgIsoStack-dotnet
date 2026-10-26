@@ -1,0 +1,19 @@
+# An example unit for aow-linkd: copy to /etc/systemd/system/, set --can and --listen, then
+# "systemctl enable --now aow-linkd". The AOW HAT has its own (AgOpenWeb-HAT deploy/).
+[Unit]
+Description=AOW link gateway (CAN over TCP for a virtual terminal)
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/aow-linkd --can can0 --listen 0.0.0.0
+Restart=always
+RestartSec=1
+# The poll loop pings every second: a hang is restarted like a crash.
+WatchdogSec=5
+# SocketCAN, rtnetlink and a port above 1024 need no privileges.
+DynamicUser=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

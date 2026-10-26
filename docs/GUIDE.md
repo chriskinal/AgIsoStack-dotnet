@@ -187,6 +187,8 @@ SocketCAN.
 - **It reconnects by itself.** After 1 s with nothing from the gateway it drops the link and tries
   again at once, then every 250 ms. `Connected` and `Disconnected` tell you, and
   `Disconnected` says why (`Busy`: the gateway already has a terminal; `Timeout`; `Lost`; ...).
+  A try that never comes up is `ConnectFailed`, with the same reasons: a terminal refused because
+  another one has the gateway hears it there, with the gateway's text naming the holder.
 - **Frames sent while the link is down are dropped**, never saved for later (`FramesDropped`
   counts them). The implements notice the terminal is gone after 3 s and reconnect when it comes
   back. A short cut usually goes unnoticed.
@@ -438,7 +440,7 @@ takes about a second instead of an upload (about 15 s for a 150 kB pool at 250 k
 
 | Symptom | Look at |
 |---|---|
-| Nothing happens, no `AddressClaimed` | Frames aren't reaching the bus: `Send` is wired? `link.IsConnected`? `Disconnected` with `Busy` means another terminal holds the gateway. An slcan adapter: `LastError`; the bus needs its terminating resistors. |
+| Nothing happens, no `AddressClaimed` | Frames aren't reaching the bus: `Send` is wired? `link.IsConnected`? `ConnectFailed` with `Busy` means another terminal holds the gateway. An slcan adapter: `LastError`; the bus needs its terminating resistors. |
 | An implement uploads every time it connects | The store isn't kept: the `FilePoolStore` folder is temporary or cleared, or a custom store returns false. |
 | An implement uploads again after a few seconds | It lost the terminal for 3 s: a link cut, or a handler blocking the stack's thread. |
 | Upload stalls or fails partway | Handlers or the store too slow; frames held up in your transport; `HandlerFailed`. Turn on `Log` at level 1. |

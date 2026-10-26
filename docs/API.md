@@ -170,6 +170,7 @@ the link's own thread.
 | `LinkFrameHandler FrameReceived` | `(int channel, uint id, ReadOnlySpan<byte> data, bool extended, uint timeUs)`: `timeUs` is the gateway's receive time on its own clock, wrapping, for spacing only. |
 | `Action<GatewayInfo> Connected` | The HELLOs are exchanged. |
 | `Action<LinkCloseReason, string> Disconnected` | Down, and why. It is tried again by itself: 250 ms later; after a version refusal 5 s; refused as `Busy`, at once for 1.5 s (its own old connection, until the gateway's silence rule ends it), then every 5 s. A busy gateway's text says who has it ("in use by AgOpenWeb on SM-T733"). |
+| `Action<LinkCloseReason, string> ConnectFailed` | A try ended before the link came up, and why: `Busy` with the gateway's text (who has it), `Lost` (no route, refused), `Timeout` (no HELLO). Tried again as after `Disconnected`. |
 | `Action<BusStatus> StatusReceived` | A bus's state, on connecting, on any change and every second. |
 | `Action<double> RoundTrip` | Milliseconds, from each heartbeat. |
 | `Action<Exception> HandlerFailed` | A handler threw; the link carries on. |

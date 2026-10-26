@@ -94,6 +94,9 @@ public sealed class AowLink : IDisposable
     public event Action<GatewayInfo>? Connected;
     /// <summary>The link is down, and why. It is tried again on its own.</summary>
     public event Action<LinkCloseReason, string>? Disconnected;
+    /// <summary>A try that ended before the link came up, and why: <see cref="LinkCloseReason.Busy"/>
+    /// with who has the gateway, no route, no HELLO, ... It is tried again on its own.</summary>
+    public event Action<LinkCloseReason, string>? ConnectFailed;
     /// <summary>A bus's state, on connecting, on any change and every second.</summary>
     public event Action<BusStatus>? StatusReceived;
     /// <summary>A round trip in milliseconds, from each heartbeat.</summary>
@@ -220,6 +223,7 @@ public sealed class AowLink : IDisposable
         socket = null;
         if (stopping) result = (LinkCloseReason.ShuttingDown, "stopped");
         if (wasUp) Raise(() => Disconnected?.Invoke(result.Reason, result.Detail));
+        else if (!stopping) Raise(() => ConnectFailed?.Invoke(result.Reason, result.Detail));
         return result;
     }
 

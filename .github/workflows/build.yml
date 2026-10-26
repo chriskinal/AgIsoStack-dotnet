@@ -52,16 +52,16 @@ jobs:
     if: needs.changed.outputs.go == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: command -v ninja || brew install ninja
       - run: native/build.sh mac
       - run: native/build.sh ios
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-mac
           path: native/build-mac/libisoshim.dylib
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-ios
           path: native/build-ios/libisoshim-all.a
@@ -73,10 +73,10 @@ jobs:
     if: needs.changed.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: command -v ninja || (sudo apt-get update && sudo apt-get install -y ninja-build)
       - run: ANDROID_NDK=$ANDROID_NDK_LATEST_HOME native/build.sh android
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-android
           path: native/build-android-*/libisoshim.so
@@ -96,10 +96,10 @@ jobs:
           - { rid: arm64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: docker build -t isoshim-linux-build -f native/docker/linux.Dockerfile native/docker
       - run: docker run --rm -v "$PWD/native:/native" isoshim-linux-build /native/build.sh linux
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-linux-${{ matrix.rid }}
           path: native/build-linux-${{ matrix.rid }}/libisoshim.so
@@ -122,7 +122,7 @@ jobs:
           sudo modprobe vcan || (timeout 300 $APT update -qq && timeout 300 $APT install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan)
           sudo ip link add vcan1 type vcan && sudo ip link set vcan1 up
           sudo timeout 120 python3 gateway/linux/tests/link_probe.py build-gateway/aow-linkd bench/aowlink_check.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gateway-linux-${{ matrix.rid }}
           path: build-gateway/aow-linkd
@@ -134,9 +134,9 @@ jobs:
     if: needs.changed.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: native/build.sh windows   # llvm-mingw in Docker
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-windows
           path: native/build-windows/isoshim.dll
@@ -157,11 +157,11 @@ jobs:
           - { name: Windows x64, runner: windows-2025, lib: native-windows, dir: build-windows }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.lib }}
           path: native/${{ matrix.dir }}
@@ -174,12 +174,12 @@ jobs:
     needs: [apple, android, linux, windows]
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - run: dotnet workload install ios android
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: artifacts
@@ -220,7 +220,7 @@ jobs:
           for abi in arm64-v8a armeabi-v7a x86_64; do
             grep -q "jni/$abi/libisoshim.so" aar.txt || { echo "missing in the .aar: $abi"; exit 1; }
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: SharpIsoTerm-${{ env.VERSION }}
           path: out/*.nupkg
@@ -240,8 +240,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: assets

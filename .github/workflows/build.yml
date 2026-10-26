@@ -114,12 +114,18 @@ jobs:
             cmake --build /src/build-gateway && ctest --test-dir /src/build-gateway --output-on-failure &&
             strip --strip-unneeded /src/build-gateway/aow-linkd && /src/build-gateway/aow-linkd --version"
       - name: gateway on vcan
-        # vcan is in linux-modules-extra, not always on the runner: an apt install that once hung
-        # for over 10 minutes, so everything here has a limit.
+        # vcan is in linux-modules-extra, not on the runner's kernel: an apt install that has hung
+        # for many minutes on the x64 runners. If it can't be had in time the probe is skipped
+        # with a warning (the unit tests above still ran); a probe that runs and fails fails.
         timeout-minutes: 8
         run: |
-          APT="sudo apt-get -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=3"
-          sudo modprobe vcan || (timeout 300 $APT update -qq && timeout 300 $APT install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan)
+          APT="sudo apt-get -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=2"
+          if ! sudo modprobe vcan; then
+            if ! (timeout 150 $APT update -qq && timeout 150 $APT install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan); then
+              echo "::warning title=gateway probe skipped::vcan is not available on this runner (linux-modules-extra did not install in time); the gateway's vcan probe did not run"
+              exit 0
+            fi
+          fi
           sudo ip link add vcan1 type vcan && sudo ip link set vcan1 up
           sudo timeout 120 python3 gateway/linux/tests/link_probe.py build-gateway/aow-linkd bench/aowlink_check.py
       - uses: actions/upload-artifact@v7

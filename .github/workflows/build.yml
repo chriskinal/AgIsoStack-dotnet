@@ -1,0 +1,166 @@
+# Builds every native library (native/build.sh), runs the self-test on each desktop platform with
+# the libraries just built, and packs SharpIsoTerm with all of them. The package and each library
+# are the run's artifacts. A tag vX.Y.Z packs version X.Y.Z; anything else X.Y.Z-ci.RUN, X.Y.Z
+# from the .csproj.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  apple:
+    name: native macOS + iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - run: command -v ninja || brew install ninja
+      - run: native/build.sh mac
+      - run: native/build.sh ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-mac
+          path: native/build-mac/libisoshim.dylib
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-ios
+          path: native/build-ios/libisoshim-all.a
+          if-no-files-found: error
+
+  android:
+    name: native Android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: command -v ninja || (sudo apt-get update && sudo apt-get install -y ninja-build)
+      - run: ANDROID_NDK=$ANDROID_NDK_LATEST_HOME native/build.sh android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android
+          path: native/build-android-*/libisoshim.so
+          if-no-files-found: error
+
+  # On Debian 12 (native/docker/linux.Dockerfile), as build.sh does from a Mac, so the library
+  # loads on glibc 2.36 and later: the runner's own Ubuntu is newer.
+  linux:
+    name: native Linux ${{ matrix.rid }}
+    strategy:
+      matrix:
+        include:
+          - { rid: x64, runner: ubuntu-24.04 }
+          - { rid: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t isoshim-linux-build -f native/docker/linux.Dockerfile native/docker
+      - run: docker run --rm -v "$PWD/native:/native" isoshim-linux-build /native/build.sh linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-${{ matrix.rid }}
+          path: native/build-linux-${{ matrix.rid }}/libisoshim.so
+          if-no-files-found: error
+
+  windows:
+    name: native Windows x64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: native/build.sh windows   # llvm-mingw in Docker
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-windows
+          path: native/build-windows/isoshim.dll
+          if-no-files-found: error
+
+  # The self-test (IsoShimSpike.RunAll, no bus) against the libraries above. The stop-while-parsing
+  # run in it is the regression for the shutdown crash.
+  selftest:
+    name: self-test ${{ matrix.name }}
+    needs: [apple, linux, windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, runner: macos-26, lib: native-mac, dir: build-mac }
+          - { name: Linux x64, runner: ubuntu-24.04, lib: native-linux-x64, dir: build-linux-x64 }
+          - { name: Linux arm64, runner: ubuntu-24.04-arm, lib: native-linux-arm64, dir: build-linux-arm64 }
+          - { name: Windows x64, runner: windows-2025, lib: native-windows, dir: build-windows }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.lib }}
+          path: native/${{ matrix.dir }}
+      - name: self-test
+        shell: bash
+        run: cd dotnet/console && dotnet run -c Release -p:DesktopOnly=true | tee selftest.log && grep -q "ALL PASS" selftest.log
+
+  pack:
+    name: package
+    needs: [apple, android, linux, windows]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet workload install ios android
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts
+      - name: libraries into native/build-*/
+        run: |
+          mkdir -p native/build-mac native/build-ios native/build-windows native/build-linux-x64 native/build-linux-arm64
+          cp artifacts/native-mac/libisoshim.dylib native/build-mac/
+          cp artifacts/native-ios/libisoshim-all.a native/build-ios/
+          cp artifacts/native-windows/isoshim.dll native/build-windows/
+          cp artifacts/native-linux-x64/libisoshim.so native/build-linux-x64/
+          cp artifacts/native-linux-arm64/libisoshim.so native/build-linux-arm64/
+          cp -R artifacts/native-android/build-android-* native/
+          find native/build-* -type f | sort
+      - name: version
+        run: |
+          V=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' dotnet/SharpIsoTerm/SharpIsoTerm.csproj)
+          case "$GITHUB_REF" in
+            refs/tags/v*) V=${GITHUB_REF#refs/tags/v} ;;
+            *) V=$V-ci.$GITHUB_RUN_NUMBER ;;
+          esac
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "$V"
+      - run: dotnet pack dotnet/SharpIsoTerm -c Release -o out -p:Version=$VERSION -p:ValidateXcodeVersion=false
+      - name: every runtime in the package
+        run: |
+          unzip -l out/SharpIsoTerm.$VERSION.nupkg | tee contents.txt
+          for f in runtimes/osx/native/libisoshim.dylib runtimes/ios-arm64/native/libisoshim-all.a \
+                   runtimes/linux-x64/native/libisoshim.so runtimes/linux-arm64/native/libisoshim.so \
+                   runtimes/win-x64/native/isoshim.dll lib/net10.0/SharpIsoTerm.dll \
+                   lib/net10.0-ios lib/net10.0-android buildTransitive/SharpIsoTerm.targets THIRD-PARTY-NOTICES.txt; do
+            grep -q "$f" contents.txt || { echo "missing: $f"; exit 1; }
+          done
+          unzip -o -q out/SharpIsoTerm.$VERSION.nupkg 'lib/net10.0-android*/SharpIsoTerm.aar' -d aar
+          unzip -l aar/lib/*/SharpIsoTerm.aar | tee aar.txt
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            grep -q "jni/$abi/libisoshim.so" aar.txt || { echo "missing in the .aar: $abi"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SharpIsoTerm-${{ env.VERSION }}
+          path: out/*.nupkg
+          if-no-files-found: error

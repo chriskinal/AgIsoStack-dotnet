@@ -75,9 +75,17 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    AgOpenWeb directly (decided 2026-10-24).
 2. **The client side**, for implements in .NET (the stack's VT client and task controller
    client), on the same one-thread model.
-3. **Tests in CI**: the self-test on Linux and macOS runners; the stop-while-parsing run is the
-   regression for the shutdown crash. Until then every desktop platform runs on the Mac:
-   `bench/selftest.sh linux windows` (Docker for Linux, the Parallels VM for Windows).
+3. **CI** (`.github/workflows/build.yml`, 2026-10-26): every native library on GitHub runners
+   (macOS and iOS on macOS; Android, Windows in llvm-mingw and Linux in Debian 12 on Ubuntu, arm64
+   on an arm64 runner), the self-test against them on macOS, Linux x64 and arm64 and Windows x64
+   (the stop-while-parsing run is the regression for the shutdown crash), and the package with
+   all of them, checked for every runtime. The package and the libraries are the run's
+   artifacts; a tag `vX.Y.Z` packs X.Y.Z, anything else `-ci.RUN`. Found on the first runs:
+   Windows sleeps in 15.6 ms ticks unless a process asks for 1 ms (the self-test now does), so
+   `VirtualTerminalStack`'s 5 ms step is about 15.6 ms on Windows: the host's choice, or the
+   stack's to ask for 1 ms? Open. And the AowLink run's "the terminal still has the implement"
+   (checked at once after the busy reconnect) failed once on a macOS runner and passed on the
+   rerun: to look into. Next: publishing to NuGet from a tag.
 4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
    (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.

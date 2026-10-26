@@ -54,6 +54,10 @@ in Docker (OrbStack). Linux is built on Debian 12, so it loads on glibc 2.36 (Ra
 bookworm) and later. Windows is cross-compiled with llvm-mingw, the C++ runtime linked in: the DLL
 needs only the Windows C runtime (UCRT, in Windows 10 and later).
 
+CI (`.github/workflows/build.yml`) builds every library on GitHub runners, runs the self-test on
+macOS, Linux x64 and arm64 and Windows x64, and packs the package with all of them: each is an
+artifact of the run.
+
 The stack is fetched at the commit pinned in `native/CMakeLists.txt`;
 `-DISOSHIM_STACK_DIR=/path/to/AgIsoStack-plus-plus` builds against a local checkout. Needs CMake
 3.28, Ninja, and for the apps the .NET 10 SDK with the `ios` and `android` workloads.

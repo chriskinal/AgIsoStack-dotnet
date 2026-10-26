@@ -84,8 +84,13 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Windows sleeps in 15.6 ms ticks unless a process asks for 1 ms (the self-test now does), so
    `VirtualTerminalStack`'s 5 ms step is about 15.6 ms on Windows: the host's choice, or the
    stack's to ask for 1 ms? Open. And the AowLink run's "the terminal still has the implement"
-   (checked at once after the busy reconnect) failed once on a macOS runner and passed on the
-   rerun: to look into. Next: publishing to NuGet from a tag.
+   failed now and then on the runners: the test's two link cuts, at the wrong moment of the
+   implement's once-a-second working set maintenance, swallowed three in a row and the terminal
+   dropped it after 3 s, as ISO 11783-6 says; each cut now starts just after one has crossed
+   (none failed in 20 runs with every core busy, from 19 of 20). Its fake gateway's thread also
+   died on a connection the client had already given up on. Releases: a nightly pre-release
+   (05:00 UTC, when main has moved) and vX.Y.Z from a tag, on the Releases page. Next:
+   publishing to NuGet from a tag.
 4. **Upstream.** The managed working set's unjoined parse thread is reported, with the fix
    (its destructor joins) and the never-called `transferred_object_pool_parse_start`:
    [#802](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/issues/802), 2026-10-24.

@@ -56,7 +56,9 @@ needs only the Windows C runtime (UCRT, in Windows 10 and later).
 
 CI (`.github/workflows/build.yml`) builds every library on GitHub runners, runs the self-test on
 macOS, Linux x64 and arm64 and Windows x64, and packs the package with all of them: each is an
-artifact of the run.
+artifact of the run. Releases are on the repo's Releases page: `nightly`, a pre-release rebuilt
+from `main` at 05:00 UTC when it has moved (or by hand: Actions, build, Run workflow), and
+`vX.Y.Z` from a tag. Each has the package and every platform's native library with `isoshim.h`.
 
 The stack is fetched at the commit pinned in `native/CMakeLists.txt`;
 `-DISOSHIM_STACK_DIR=/path/to/AgIsoStack-plus-plus` builds against a local checkout. Needs CMake

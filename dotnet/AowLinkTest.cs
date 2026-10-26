@@ -32,6 +32,7 @@ public static class AowLinkTest
         public int Connections, Refused;
         public readonly ConcurrentQueue<byte[]> FromClient = new(); // FRAME bodies
         public string? ClientName;
+        public Action<string>? Trace;
         public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
 
         public FakeGateway()
@@ -55,17 +56,19 @@ public static class AowLinkTest
             lock (sendLock) { try { s.Send(m); } catch (Exception e) when (e is SocketException or ObjectDisposedException) { } }
         }
 
-        /// <summary>A frame from the bus (the implement) to the client.</summary>
-        public void ToClient(uint id, ReadOnlySpan<byte> data, bool extended)
+        /// <summary>A frame from the bus (the implement) to the client. False: dropped (no
+        /// connection, or silent).</summary>
+        public bool ToClient(uint id, ReadOnlySpan<byte> data, bool extended)
         {
             var s = current;
-            if (s == null || Silent) return;
+            if (s == null || Silent) return false;
             var body = new byte[10 + data.Length];
             body[1] = (byte)(extended ? 1 : 0);
             BitConverter.TryWriteBytes(body.AsSpan(2, 4), id);
             BitConverter.TryWriteBytes(body.AsSpan(6, 4), (uint)(clock.Elapsed.TotalMilliseconds * 1000));
             data.CopyTo(body.AsSpan(10));
             Send(s, Msg(2, body));
+            return true;
         }
 
         void Run()
@@ -75,9 +78,10 @@ public static class AowLinkTest
                 Socket s;
                 try { s = listener.AcceptSocket(); }
                 catch (Exception) { return; }
-                s.NoDelay = true;
-                try { Serve(s); }
-                catch (Exception e) when (e is SocketException or ObjectDisposedException or IOException) { }
+                // A connection the client already gave up on can throw even here (macOS: EINVAL).
+                Trace?.Invoke("gateway: accepted");
+                try { s.NoDelay = true; Serve(s); Trace?.Invoke("gateway: connection over"); }
+                catch (Exception e) when (e is SocketException or ObjectDisposedException or IOException) { Trace?.Invoke($"gateway: connection over, {e.GetType().Name} {e.Message}"); }
                 current = null;
                 try { s.Close(); } catch { }
             }
@@ -225,24 +229,51 @@ public static class AowLinkTest
         ulong? active = null;
         IReadOnlyList<WorkingSetInfo>? sets = null;
         var screens = new ConcurrentQueue<string>();
+        // What happened, for a check that fails: the working sets as they changed, and the stack's warnings.
+        var clock = Stopwatch.StartNew();
+        var trace = new ConcurrentQueue<string>();
+        long maintainedAt = -1;
+        // Each cut starts just after the implement's working set maintenance (once a second) has
+        // crossed the link: the terminal drops a working set it hears none from for 3 s (ISO
+        // 11783-6), and a cut of 1.3 s at the wrong moment of that second swallows two of them.
+        async Task<bool> Maintained()
+        {
+            long since = clock.ElapsedMilliseconds;
+            bool crossed = await Until(() => Interlocked.Read(ref maintainedAt) > since, 2000);
+            await Task.Delay(50);
+            return crossed;
+        }
+        gateway.Trace = text => trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  {text}");
         var stack = new VirtualTerminalStack(new VirtualTerminalOptions
         {
             PacketsPerCts = 255,
+            Log = (level, text) => trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  log {level}: {text}"),
+            LogLevel = 2,
             // Channel 0 is the terminal's, to the gateway; channel 1 is the implement's, the gateway's bus.
             Send = (channel, id, data, extended) =>
             {
                 if (channel == 0) link.Send(0, id, data, extended);
-                else gateway.ToClient(id, data, extended);
+                else if (gateway.ToClient(id, data, extended) && ((id >> 8) & 0xFF00) == 0xE700 && data.Length > 0 && data[0] == 0xFF)
+                    maintainedAt = clock.ElapsedMilliseconds;  // the implement's working set maintenance, across the link
             },
         });
         var vt = stack.Terminals[0];
-        vt.WorkingSetsChanged += (a, list) => { active = a; sets = list; };
+        vt.WorkingSetsChanged += (a, list) =>
+        {
+            active = a;
+            sets = list;
+            if (list.Any(w => w.State == PoolState.Transferring)) return;  // progress
+            trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  working sets: active {(a == null ? "none" : $"{a:X16}")}, {string.Join(", ", list.Select(w => $"{w.Address} {w.State}"))}");
+        };
+        link.Connected += _ => trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  link up");
+        link.Disconnected += (why, _) => trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  link down: {why}");
         vt.Message += json => { if (json.StartsWith("{\"type\":\"screen\"")) screens.Enqueue(json); };
         stack.Attach(link);
         // After Attach, so the stack has queued a link change before the checks act on it.
         link.Connected += g => { info = g; Interlocked.Increment(ref ups); };
         link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         int busyTries = 0; string busyText = "";
+        link.ConnectFailed += (why, text) => trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  connect failed: {why} {text}");
         link.ConnectFailed += (why, text) => { if (why == LinkCloseReason.Busy) { busyText = text; Interlocked.Increment(ref busyTries); } };
         stack.Start();
         try
@@ -257,6 +288,7 @@ public static class AowLinkTest
             Check("round trips measured", await Until(() => rtts.Count >= 3, 2000));
 
             byte[] pool = Pool("VT3TestPool.iop");
+            trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  the implement starts");
             await vt.InvokeAsync(() => { unsafe { fixed (byte* p = pool) return IsoShim.isoshim_test_implement(0, p, pool.Length); } });
             bool ready = await Until(() => sets?.Any(s => s.State == PoolState.Ready) == true, 20000);
             Check($"the implement's pool came over the link ({gateway.FromClient.Count} frames to the bus)", ready);
@@ -268,7 +300,9 @@ public static class AowLinkTest
                 Check("the press crossed the link", await Until(() => gateway.FromClient.Any(f => Key(f, 1)), 2000));
 
                 // The gateway goes silent: the link drops after about 1 s and comes back.
+                Check("the implement's maintenance crossed the link", await Maintained());
                 var t = Stopwatch.StartNew();
+                trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  the gateway goes silent");
                 gateway.Silent = true;
                 Check("silent gateway: the link drops", await Until(() => downs == 1, 3000));
                 double took = t.Elapsed.TotalMilliseconds;
@@ -284,11 +318,14 @@ public static class AowLinkTest
                 Check("the held key is aborted on the new link", await Until(() => gateway.FromClient.Any(f => Key(f, 3)), 2000));
 
                 // Busy twice, then let in: the client keeps trying.
+                Check("the implement's maintenance crossed the new link", await Maintained());
                 gateway.RefuseBusy = 2;
+                trace.Enqueue($"{clock.ElapsedMilliseconds,6} ms  dropped by the gateway, busy twice");
                 gateway.Drop();
                 Check("dropped, refused busy twice, then back", await Until(() => ups == 3, 4000) && gateway.Refused == 2);
 
-                Check("the terminal still has the implement", active != null && sets?.Any(s => s.State == PoolState.Ready) == true);
+                bool kept = active != null && sets?.Any(s => s.State == PoolState.Ready) == true;
+                Check("the terminal still has the implement", kept);
                 // Busy for good (another terminal has it): after 1.5 s of refusals, one try every 5 s.
                 gateway.RefuseBusy = 1000;
                 int refusedBefore = gateway.Refused;
@@ -308,6 +345,7 @@ public static class AowLinkTest
             stack.Stop();
         }
         Check("stopped: link down, terminal stopped", !link.IsConnected && !vt.IsRunning);
+        if (failures > 0) foreach (var line in trace) log("         " + line);
         log(failures == 0 ? "PASS: the gateway link" : $"FAIL: the gateway link, {failures} checks failed");
         return failures == 0;
     }

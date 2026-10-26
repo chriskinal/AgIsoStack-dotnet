@@ -114,10 +114,14 @@ jobs:
             cmake --build /src/build-gateway && ctest --test-dir /src/build-gateway --output-on-failure &&
             strip --strip-unneeded /src/build-gateway/aow-linkd && /src/build-gateway/aow-linkd --version"
       - name: gateway on vcan
+        # vcan is in linux-modules-extra, not always on the runner: an apt install that once hung
+        # for over 10 minutes, so everything here has a limit.
+        timeout-minutes: 8
         run: |
-          sudo modprobe vcan || (sudo apt-get update -qq && sudo apt-get install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan)
+          APT="sudo apt-get -o DPkg::Lock::Timeout=60 -o Acquire::http::Timeout=30 -o Acquire::Retries=3"
+          sudo modprobe vcan || (timeout 300 $APT update -qq && timeout 300 $APT install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan)
           sudo ip link add vcan1 type vcan && sudo ip link set vcan1 up
-          sudo python3 gateway/linux/tests/link_probe.py build-gateway/aow-linkd bench/aowlink_check.py
+          sudo timeout 120 python3 gateway/linux/tests/link_probe.py build-gateway/aow-linkd bench/aowlink_check.py
       - uses: actions/upload-artifact@v4
         with:
           name: gateway-linux-${{ matrix.rid }}

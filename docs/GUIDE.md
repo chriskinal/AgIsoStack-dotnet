@@ -36,6 +36,7 @@ Words used below:
 
 ```
  CAN bus ── gateway ──TCP── AowLink ──▶ VirtualTerminalStack
+     (or ── USB adapter ── SlcanLink ──▶)
                                ▲              │   Terminals[0] ──JSON──▶ your page (vtpaint.js)
                                └── frames ────┘        ▲                       │
                                                        └──── calls ◀── taps ───┘
@@ -197,6 +198,39 @@ SocketCAN.
   `_aowlink._tcp`; `AowLink` doesn't browse.
 - On iOS, add `NSLocalNetworkUsageDescription` to `Info.plist`. On Android, the `INTERNET`
   permission.
+
+### An adapter on this device: `SlcanLink`
+
+A CAN adapter plugged into the tablet or PC itself, speaking **slcan** (the Lawicel ASCII
+protocol: a CANable with its stock firmware, and many serial adapters). No gateway, no Wi-Fi: the
+cable is the link.
+
+```csharp
+string port = SerialPorts.List().First();          // pick one in your settings, really
+var link = new SlcanLink(port, bitrate: 250000);   // ISOBUS is 250 kbit/s
+var stack = new VirtualTerminalStack(new VirtualTerminalOptions { Send = link.Send, Store = store });
+stack.Attach(link);
+stack.Start();
+link.Start();
+```
+
+- **Ports:** `SerialPorts.List()` gives the names. macOS: `/dev/cu.usbmodem…`; Windows: `COM3`;
+  Linux: `/dev/ttyACM0`; Android: `usb:16d0:117e` (vendor and product id). On Linux, an adapter
+  the kernel knows (PEAK, Kvaser, gs_usb) is a SocketCAN interface instead, and an AOW link
+  gateway on loopback reaches it.
+- **Android:** Android apps can't open serial devices, so the link uses Android's USB host
+  interface (USB serial, CDC-ACM) instead. The first time it opens the adapter, Android asks
+  the user for permission; until it's given, the link keeps trying. No manifest entry is
+  needed. Use a USB OTG cable or adapter.
+- **iOS: no.** iOS apps can't reach a USB adapter; an iPad uses a gateway over Wi-Fi.
+- **It reopens by itself.** Unplugged, the link goes down (`Disconnected`, reason `Lost`) and the
+  terminals see the bus go as after a gateway cut; plugged back in, it's set up and up again
+  within a second or so. While none is plugged in, `LastError` says why.
+- On opening it closes the adapter, asks its version (shown in `Connected`), sets the bitrate
+  and opens it; on `Stop` it closes the adapter (off the bus) before the port.
+- slcan reports no bus errors and has no heartbeat: a quiet bus looks the same as a cable that
+  fell out of the bus, and a dead bus only shows as implements going away.
+- Bitrates: 10, 20, 50, 100, 125, 250, 500, 800 kbit/s and 1 Mbit/s.
 
 ### Any other way to the bus
 
@@ -396,7 +430,7 @@ takes about a second instead of an upload (about 15 s for a 150 kB pool at 250 k
 
 | Symptom | Look at |
 |---|---|
-| Nothing happens, no `AddressClaimed` | Frames aren't reaching the bus: `Send` is wired? `link.IsConnected`? `Disconnected` with `Busy` means another terminal holds the gateway. |
+| Nothing happens, no `AddressClaimed` | Frames aren't reaching the bus: `Send` is wired? `link.IsConnected`? `Disconnected` with `Busy` means another terminal holds the gateway. An slcan adapter: `LastError`; the bus needs its terminating resistors. |
 | An implement uploads every time it connects | The store isn't kept: the `FilePoolStore` folder is temporary or cleared, or a custom store returns false. |
 | An implement uploads again after a few seconds | It lost the terminal for 3 s: a link cut, or a handler blocking the stack's thread. |
 | Upload stalls or fails partway | Handlers or the store too slow; frames held up in your transport; `HandlerFailed`. Turn on `Log` at level 1. |

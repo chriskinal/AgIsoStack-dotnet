@@ -28,6 +28,8 @@ Rules an integration must keep:
 - Keep pictures from the `Image` event for the life of the terminal; screens refer to them by id.
 - Don't give it a store that refuses to save: implements told "not stored" disconnect. The
   default store keeps pools in memory; `FilePoolStore` keeps them on disk.
+- The bus: `AowLink` (a gateway over TCP) or `SlcanLink` (an slcan adapter on this device's serial
+  port or, on Android, USB; not iOS), both wired with `stack.Attach(link)` and `Send = link.Send`.
 - Subscribe to `HandlerFailed`: exceptions in handlers and stores go there, not to the caller.
 
 Minimal host:

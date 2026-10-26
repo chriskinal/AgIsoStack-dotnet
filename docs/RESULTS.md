@@ -160,6 +160,19 @@ pool store the terminal answered Store Version with an error, and upstream's VT 
 resets its connection and uploads again, every 12 s (aow-hatd) or 23 s (the example). The class
 now keeps pools in memory when the host gives no store (PLAN.md, upstream gaps).
 
+## 2026-10-25: a CANable on the Mac, `SlcanLink`
+
+A CANable (stock slcan firmware, "CANable 9fddea4", USB id ad50:60c4) on the Mac
+(`/dev/cu.usbmodem…`), wired to the CM4's implement bus (hatcan2 and hatcan3), in place of the
+gateway. AgOpenWeb with two terminals; `aow-hatd`'s implement (0xF7) and the VT example (0x80,
+`VT_INSTANCE=1`) on the bus.
+
+- Both implements connected (VT 1 and VT 2) and took a soft key each at once.
+- With the example's stored pool taken away: link up to its screen in 15.5 s, the upload itself
+  about 13 s (2.2 to 15.5 s), at the bus's rate, as through the gateway.
+- The adapter didn't answer `V`: the link's `Connected` gives the port name only.
+- Bus error counters on the CM4 unchanged through the runs (both error-active, no new errors).
+
 ## 2026-10-25: two terminals in AgOpenWeb, on the bench
 
 AgOpenWeb (Mac, Desktop head) with `VtCount` 2, through `aow-linkd` on the CM4 (hatcan2, reached

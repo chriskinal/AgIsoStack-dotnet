@@ -226,6 +226,32 @@ opening asks the user for permission once, failing until it is given).
 buffer, int offset, int count)` (waits about 100 ms; 0 for nothing yet; throws once the port is
 gone), `void Write(byte[] buffer, int offset, int count)`.
 
+## AowLinkBrowser
+
+`public sealed class AowLinkBrowser : IDisposable`. Finds AOW link gateways announcing themselves
+on the local network by DNS-SD (`_aowlink._tcp`). Desktop and Android: mDNS queries from an
+ordinary port on every IPv4 interface, answered by unicast (no port 5353, no multicast group).
+iOS: the system's Bonjour browser; the app's `Info.plist` needs `NSLocalNetworkUsageDescription`
+and `NSBonjourServices` with `_aowlink._tcp`.
+
+| Member | |
+|---|---|
+| `void Start()` | Looks at once, then 1, 2, 4 … up to 30 s apart, until stopped. |
+| `void Refresh()` | Looks again now, and often again for a while (a Refresh button). |
+| `void Stop()` | Ends the search; the list goes empty. |
+| `IReadOnlyList<AowLinkGateway> Gateways` | Found, by name. |
+| `const string ServiceType` | `"_aowlink._tcp"`. |
+
+| Event | |
+|---|---|
+| `Action<IReadOnlyList<AowLinkGateway>> Changed` | The whole list, when a gateway is found, goes (two rounds without an answer, or its goodbye) or moves. On the browser's thread (iOS: the main thread). |
+| `Action<Exception> HandlerFailed` | |
+
+`public sealed record AowLinkGateway(string Name, string Host, int Port, string HostName,
+IReadOnlyDictionary<string, string> Txt)`: the instance name for the operator, an IPv4 address
+and port for `new AowLink(Host, Port)`, the host's name and the TXT record (`v=1`). A host on
+several networks gives the address on the network of the interface that heard it.
+
 ## Messages
 
 `VirtualTerminal.Message` (and the C `message` callback, under its terminal): one JSON object per

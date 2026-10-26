@@ -30,6 +30,8 @@ Rules an integration must keep:
   default store keeps pools in memory; `FilePoolStore` keeps them on disk.
 - The bus: `AowLink` (a gateway over TCP) or `SlcanLink` (an slcan adapter on this device's serial
   port or, on Android, USB; not iOS), both wired with `stack.Attach(link)` and `Send = link.Send`.
+  `AowLinkBrowser` finds gateways on the network (DNS-SD `_aowlink._tcp`) for the operator to pick
+  by name.
 - Subscribe to `HandlerFailed`: exceptions in handlers and stores go there, not to the caller.
 
 Minimal host:

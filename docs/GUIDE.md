@@ -194,10 +194,17 @@ SocketCAN.
   that was held is sent as aborted, so an implement never sees a press without its end.
 - `StatusReceived` reports each bus's state and error counters; `RoundTrip` reports the
   heartbeat's round trip in ms. Both are for showing link health.
-- The gateway's address is yours to find. Gateways announce themselves by DNS-SD as
-  `_aowlink._tcp`; `AowLink` doesn't browse.
-- On iOS, add `NSLocalNetworkUsageDescription` to `Info.plist`. On Android, the `INTERNET`
-  permission.
+- **Finding the gateway:** gateways announce themselves by DNS-SD as `_aowlink._tcp`.
+  `AowLinkBrowser` lists them, so the operator picks one by name; keep the name with the address,
+  and if the gateway turns up at another address, connect there:
+
+  ```csharp
+  var browser = new AowLinkBrowser();
+  browser.Changed += list => ShowInSettings(list);   // g.Name for the operator; new AowLink(g.Host, g.Port)
+  browser.Start();                                    // browser.Refresh() behind a Refresh button
+  ```
+- On iOS, add `NSLocalNetworkUsageDescription` and `NSBonjourServices` (`_aowlink._tcp`) to
+  `Info.plist`; iOS asks the user once. On Android, the `INTERNET` permission.
 
 ### An adapter on this device: `SlcanLink`
 

@@ -218,14 +218,22 @@ client sends nothing that was meant for the old one.
 
 ### Finding a gateway
 
-The address is configured (an ESP32 on its own access point has a fixed one; AgOpenWeb on the CM4
-uses loopback). A gateway may also announce itself by DNS-SD as `_aowlink._tcp`, TXT `v=1`.
+A gateway announces itself by DNS-SD as `_aowlink._tcp`, TXT `v=1`, with an instance name for
+the operator ("AOW HAT 1234"), only where it listens (not while it listens on loopback alone).
+`AowLinkBrowser` (docs/API.md) lists the gateways found, so the operator picks one by name instead
+of typing an address; an address can still be configured (AgOpenWeb on the CM4 uses loopback).
+A host that keeps the gateway's name finds it again if its address changes.
 
 ### Security
 
-None in version 1. Anyone who can reach the port can put frames on the implement's bus, so a
-gateway listens only where the network is the user's: loopback, a cable, or its own WPA2 access
-point. A pairing key in HELLO is open (section 7) before a gateway joins a shared network.
+None, by decision (2026-10-25). Anyone who can reach the port can put frames on the implement's
+bus, as anyone on an AgOpenGPS machine network can send the steer and machine PGNs: the machine
+network (a cable, or the gateway's or the unit's own WPA2 access point) is trusted, and joining it
+is the pairing. A gateway listens only there and on loopback, never on an uplink to a farm or
+office network. A pairing key in HELLO was considered and dropped: every gateway would need a
+farmer-friendly way to show it and every operator would have to understand it, against a threat
+the tractor's own network doesn't have. One control client at a time is what keeps two terminals
+from fighting over an implement.
 
 ### Built against it
 
@@ -255,7 +263,7 @@ time over a link: about 84 batches at 255 for a 150 kB pool, about 1,340 at the 
 
 ## 7. Open
 
-1. A pairing key in HELLO, for gateways on networks that are not the user's own.
+1. ~~A pairing key in HELLO~~: dropped, see Security in section 5.
 2. Bus-off and a second CAN channel on real hardware: built, not yet tested (the bench has one
    link channel; vcan has no error states).
 3. Tablet power saving: it can hold packets for a few hundred milliseconds whatever the transport.

@@ -57,7 +57,8 @@ typedef int32_t (*isoshim_save_fn)(uint64_t name, const uint8_t *label, int32_t 
 typedef int32_t (*isoshim_load_fn)(uint64_t name, const uint8_t *label, int32_t labelLen);
 // list: each stored label of this length, one isoshim_reply each, before returning.
 typedef void (*isoshim_list_fn)(uint64_t name, int32_t labelLen);
-// remove: label null removes every version of labelLen. 1: removed.
+// remove: label null removes every version of labelLen; also called before a Store Version's
+// save, its result unused. 1: removed.
 typedef int32_t (*isoshim_remove_fn)(uint64_t name, const uint8_t *label, int32_t labelLen);
 
 typedef struct isoshim_host {

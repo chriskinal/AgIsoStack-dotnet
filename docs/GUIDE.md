@@ -409,8 +409,9 @@ takes about a second instead of an upload (about 15 s for a 150 kB pool at 250 k
   with a store that refuses: an implement told "not stored" drops its connection and uploads
   again.
 - Your own `IPoolStore` (a database, the cloud) must implement five methods. They are called on
-  the stack's thread, so keep them quick. `Save` may arrive in parts: the first with
-  `append` false, the rest appended. Labels are 7 bytes, or 32 for VT 5 and 6 extended labels,
+  the stack's thread, so keep them quick. An implement storing a version calls `Remove` for
+  its label first (nothing may be stored yet), then `Save`, which may arrive in parts: the first
+  with `append` false, the rest appended. Labels are 7 bytes, or 32 for VT 5 and 6 extended labels,
   and the two lengths are separate versions. An exception counts as a failure and goes to
   `HandlerFailed`.
 

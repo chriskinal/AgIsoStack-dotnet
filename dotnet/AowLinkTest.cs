@@ -219,8 +219,6 @@ public static class AowLinkTest
         var timeouts = new List<double>();
         var downAt = Stopwatch.StartNew();
         GatewayInfo? info = null;
-        link.Connected += g => { info = g; Interlocked.Increment(ref ups); };
-        link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         link.StatusReceived += _ => Interlocked.Increment(ref statuses);
         link.RoundTrip += ms => rtts.Enqueue(ms);
 
@@ -241,6 +239,9 @@ public static class AowLinkTest
         vt.WorkingSetsChanged += (a, list) => { active = a; sets = list; };
         vt.Message += json => { if (json.StartsWith("{\"type\":\"screen\"")) screens.Enqueue(json); };
         stack.Attach(link);
+        // After Attach, so the stack has queued a link change before the checks act on it.
+        link.Connected += g => { info = g; Interlocked.Increment(ref ups); };
+        link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         stack.Start();
         try
         {

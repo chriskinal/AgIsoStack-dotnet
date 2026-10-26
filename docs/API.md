@@ -140,7 +140,7 @@ every terminal. Called on the stack's thread: keep it quick. An exception counts
 | `bool Save(ulong name, ReadOnlySpan<byte> label, ReadOnlySpan<byte> data, bool append)` | Stores a pool or a part of it: the first part with `append` false. False: not stored. |
 | `byte[]? Load(ulong name, ReadOnlySpan<byte> label)` | The pool, or null. |
 | `IEnumerable<byte[]> List(ulong name, int labelLength)` | The labels stored for this implement of this length. |
-| `bool Remove(ulong name, ReadOnlySpan<byte> label)` | |
+| `bool Remove(ulong name, ReadOnlySpan<byte> label)` | Also before each Store Version's `Save`, whether or not anything is stored; that result is not used. |
 | `bool RemoveAll(ulong name, int labelLength)` | Every version of this label length. |
 
 `FilePoolStore(string directory)`: `DIRECTORY/NAME/LABEL.iop`, NAME and LABEL in hex; creates the

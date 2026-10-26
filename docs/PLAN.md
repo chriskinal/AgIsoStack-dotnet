@@ -84,8 +84,11 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Fixed upstream by #805 (e932041, 2026-10-25), in our pin since 2026-10-25: `Terminal::~Terminal`
    no longer joins; built against 77b8dc9 without it, the stop-while-parsing run aborts (a
    joinable thread destroyed), against e932041 it passes on the Mac and both tablets. The
-   never-called parse start hook is still open: `step()` still looks for a parse running. Then
-   offer the wrapper.
+   never-called parse start hook is still open: `step()` still looks for a parse running.
+   In the pin since 2026-10-26 (7b77127): #801's `object_pool_deleted`, which the shim uses to drop
+   a deleted pool's pictures and close its open field without a VT ESC (the input self-test fails
+   without it), and #809, a Store Version calls `delete_version` before `save_version` (the shim
+   already told the host to start afresh). Then offer the wrapper.
 5. **Transport** (docs/TRANSPORT.md): our own gateway protocol, not GVRET (decided 2026-10-24).
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
@@ -159,7 +162,7 @@ the client goes on to Connected after any Store Version error; a test fails with
 offered upstream as [#804](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/804), merged 2026-10-25 (93a8623). Implements already built keep the old behaviour, so the in-memory default stays.
 
 **In the transport layer, threaded use** (found here 2026-10-25, chasing a double request-to-send
-on the bench; still in upstream HEAD e932041): `TransportProtocolManager::protocol_transmit_message`
+on the bench; still in upstream HEAD 7b77127): `TransportProtocolManager::protocol_transmit_message`
 adds the new session under `activeSessionsMutex`, releases it, then runs `update_state_machine` on
 it in the caller's thread; the stack's own thread can meanwhile run `update()` over the same
 session. Both see `SendRequestToSend` and both send the RTS, back to back. The receiver overwrites

@@ -165,8 +165,6 @@ public static class SlcanLinkTest
         string? info = null;
         LinkCloseReason lastReason = LinkCloseReason.ShuttingDown;
         var heard = new ConcurrentQueue<(uint Id, bool Extended, byte[] Data)>();
-        link.Connected += i => { info = i; Interlocked.Increment(ref ups); };
-        link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         link.FrameReceived += (_, id, data, extended, _) => heard.Enqueue((id, extended, data.ToArray()));
         var openFailures = new ConcurrentQueue<string>();
         link.OpenFailed += why => openFailures.Enqueue(why);
@@ -188,6 +186,9 @@ public static class SlcanLinkTest
         vt.WorkingSetsChanged += (a, list) => { active = a; sets = list; };
         vt.Message += json => { if (json.StartsWith("{\"type\":\"screen\"")) screens.Enqueue(json); };
         stack.Attach(link);
+        // After Attach, so the stack has queued a link change before the checks act on it.
+        link.Connected += i => { info = i; Interlocked.Increment(ref ups); };
+        link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
         stack.Start();
         try
         {

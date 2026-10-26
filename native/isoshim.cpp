@@ -176,8 +176,9 @@ public:
 		g_replies.clear();
 		return pool;
 	}
-	// Upstream calls this once per part of the pool as it arrived, in order, for one Store Version;
-	// the first part is the working set's first raw data buffer.
+	// Upstream calls this once per part of the pool as it arrived, in order, for one Store Version,
+	// after delete_version for its label (AgIsoStack++ #809); the first part is the working set's
+	// first raw data buffer, so the host is told to start afresh there too.
 	bool save_version(const std::vector<std::uint8_t> &pool, const std::vector<std::uint8_t> &label, isobus::NAME name) override {
 		if (!g_host.save) return false;
 		bool first = true;
@@ -192,9 +193,14 @@ public:
 	bool delete_all_versions(std::uint8_t labelLen, isobus::NAME name) override {
 		return g_host.remove && g_host.remove(name.get_full_name(), nullptr, labelLen) != 0;
 	}
-	bool delete_object_pool(isobus::NAME) override {
+	bool delete_object_pool(isobus::NAME) override { return true; }
+
+	// After the server deleted the pool (Delete Object Pool) and cleared the active working set;
+	// the working set stays, and its next pool comes into the same one.
+	void object_pool_deleted(std::shared_ptr<WorkingSet> ws) override {
 		listChanged_ = true;
-		return true;
+		renderer_.forget(ws.get());
+		if (ws == openWs_) setOpen(ws, isobus::NULL_OBJECT_ID); // the host's editor closes
 	}
 
 	void object_pool_parse_finished(std::shared_ptr<WorkingSet> ws, bool success) override {
@@ -208,10 +214,7 @@ public:
 	void handle_unexpected_working_set_shutdown(std::shared_ptr<WorkingSet> ws, UnexpectedShutdownReason reason) override {
 		listChanged_ = true;
 		renderer_.forget(ws.get());
-		if (ws == openWs_) {
-			openWs_ = nullptr;
-			openId_ = isobus::NULL_OBJECT_ID;
-		}
+		if (ws == openWs_) setOpen(ws, isobus::NULL_OBJECT_ID); // the host's editor closes
 		g_host.event(index_, ISOSHIM_WS_SHUTDOWN, static_cast<int32_t>(reason), addressOf(ws));
 	}
 

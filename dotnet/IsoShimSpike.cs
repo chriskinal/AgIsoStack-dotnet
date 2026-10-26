@@ -341,6 +341,12 @@ public static unsafe class IsoShimSpike
             Check("select Name open, then the implement's ESC: answered with Name", isoshim_select(0, 8000, 1) == 1
                 && TestSend(0x92, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF) == 1 && Heard("\"escResponse\",\"o\":8000,\"error\":0"));
             Check("the editor closes, and no VT ESC goes back", LastEdit().Contains("\"o\":null") && !heard.Any(h => h.Contains("\"event\":\"esc\"")));
+            Check("select Rate open, then the implement's Delete Object Pool: the editor closes", isoshim_select(0, 9000, 1) == 1
+                && Heard("\"select\",\"o\":9000,\"selected\":true,\"open\":true") && TestSend(0xB2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF) == 1
+                && StepUntil(() => LastEdit().Contains("\"o\":null")));
+            Check("nothing shown, the implement still listed, its pool gone", StepUntil(() => mask == 0xFFFF
+                && workingSets.Contains("\"active\":null") && !workingSets.Contains("\"ready\"")));
+            Check("no VT ESC goes to the implement for its deleted pool", !StepUntil(() => heard.Any(h => h.Contains("\"event\":\"esc\"")), 300));
         }
         isoshim_stop();
         log($"every callback on the stepping thread: {(callbackOffThread ? "no" : "yes")}");

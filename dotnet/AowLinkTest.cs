@@ -285,7 +285,18 @@ public static class AowLinkTest
                 gateway.RefuseBusy = 2;
                 gateway.Drop();
                 Check("dropped, refused busy twice, then back", await Until(() => ups == 3, 4000) && gateway.Refused == 2);
+
                 Check("the terminal still has the implement", active != null && sets?.Any(s => s.State == PoolState.Ready) == true);
+                // Busy for good (another terminal has it): after 1.5 s of refusals, one try every 5 s.
+                gateway.RefuseBusy = 1000;
+                int refusedBefore = gateway.Refused;
+                gateway.Drop();
+                await Task.Delay(4000);
+                int fastAndSlow = gateway.Refused - refusedBefore;
+                Check($"busy for good: {fastAndSlow} refusals in 4 s, quick for 1.5 s then every 5 s", fastAndSlow >= 3 && fastAndSlow <= 9);
+                gateway.RefuseBusy = 0;
+                Check("free again: back within 5 s", await Until(() => ups == 4, 6000));
+                Check("and has its implement again", await Until(() => active != null && sets?.Any(s => s.State == PoolState.Ready) == true, 20000));
             }
         }
         finally

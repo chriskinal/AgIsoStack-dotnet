@@ -57,6 +57,10 @@ public sealed class AowLink : IDisposable
     public const byte Version = 1;
     // ConnectMs: a connection attempt made during a cut waits no longer than this once it is over.
     const int HeartbeatMs = 100, SilenceMs = 1000, HelloMs = 2000, RetryMs = 250, VersionRetryMs = 5000, ConnectMs = 500;
+    // Refused as busy: at once again for a while (our own old connection, until the gateway's
+    // silence rule closes it), then seldom (another terminal has the gateway; each refusal is a
+    // line in the gateway's log).
+    const int BusyFastMs = 1500, BusyRetryMs = 5000;
     const byte Hello = 1, Frame = 2, Heartbeat = 3, Status = 4, Close = 5;
     static readonly byte[] Magic = "AOWL"u8.ToArray();
 
@@ -176,11 +180,15 @@ public sealed class AowLink : IDisposable
 
     void Run()
     {
+        long busySince = -1;
         while (!stopping)
         {
             var (reason, detail) = Connection();
             if (stopping) break;
-            int wait = reason == LinkCloseReason.Version ? VersionRetryMs : RetryMs;
+            if (reason != LinkCloseReason.Busy) busySince = -1;
+            else if (busySince < 0) busySince = clock.ElapsedMilliseconds;
+            int wait = reason == LinkCloseReason.Version ? VersionRetryMs
+                : busySince >= 0 && clock.ElapsedMilliseconds - busySince > BusyFastMs ? BusyRetryMs : RetryMs;
             for (var end = clock.ElapsedMilliseconds + wait; !stopping && clock.ElapsedMilliseconds < end;) Thread.Sleep(10);
         }
     }

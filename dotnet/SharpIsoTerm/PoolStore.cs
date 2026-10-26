@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Stored object pools (versions): an implement that has uploaded once loads its pool from the
 // terminal next time instead of sending it again. Keyed by the implement's 64-bit NAME and the
 // version label (7 bytes, or 32 for VT version 5 and 6 extended labels).

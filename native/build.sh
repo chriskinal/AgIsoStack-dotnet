@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # Builds the native library into native/build-TARGET/.
 #   native/build.sh mac|ios|android|linux|windows [cmake args...]
 #     mac      libisoshim.dylib, universal (arm64 and x86_64)

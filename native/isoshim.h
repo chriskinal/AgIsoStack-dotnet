@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // A C interface over AgIsoStack++ for .NET: a virtual terminal whose CAN frames are carried by the
 // caller, and whose screen leaves as a draw list (docs/API.md).
 //

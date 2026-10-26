@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Self-test of the C# classes, VirtualTerminalStack and VirtualTerminal: the host's view. Its frames are looped to the test
 // implement on channel 1 (upstream's VT client, inside the native library), as in IsoShimSpike.
 using System;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The byte port an slcan adapter is reached through: a serial port on the desktop
 // (System.IO.Ports), a USB serial device (CDC-ACM) on Android (AndroidUsbSerialPort). iOS has
 // neither: apps there cannot reach a USB adapter.

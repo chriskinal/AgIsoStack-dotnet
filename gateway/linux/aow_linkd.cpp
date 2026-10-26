@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // aow-linkd: the AOW link gateway for Linux (gateway/README.md). Carries every frame of one or
 // more SocketCAN interfaces to a terminal (SharpIsoTerm's AowLink), and the terminal's frames to
 // the bus, over TCP. The protocol is docs/TRANSPORT.md section 5 (aow_link.cpp). MIT.

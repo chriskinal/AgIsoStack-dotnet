@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # Builds the bench's test implements on Linux, for the gateway's architecture, into
 # bench/implement/out/: upstream's VT example (VT3ExampleTarget, 16 frames per data packet offset)
 # and the same with 255 (VT3Example255, dpo255.patch). Both carry upstream PR #793

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """Reference gateway for the AOW link protocol, version 1 (docs/TRANSPORT.md section 5): SocketCAN
 interfaces <-> TCP clients. One control client, any number of monitors.
 

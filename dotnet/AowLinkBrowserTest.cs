@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Self-test of finding gateways (AowLinkBrowser, desktop and Android): mDNS answers built here,
 // as a responder writes them (compressed names, the SRV, TXT and address in the additional
 // records), read by the browser. Its queries need a real network; the bench checks those

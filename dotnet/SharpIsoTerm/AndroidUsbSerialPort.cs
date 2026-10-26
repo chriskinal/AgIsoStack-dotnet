@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // A USB serial device (CDC-ACM, as a CANable with slcan firmware is) through Android's USB host
 // interface: apps cannot open /dev/tty* there. No driver, no root: the app asks the user once
 // for permission to use the device.

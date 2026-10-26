@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # N runs without the capture; per run the verdict, upload attempts and ETP batches the relay saw
 # with a frame missing.
 #   verify.sh CLIENT IMPLEMENT N

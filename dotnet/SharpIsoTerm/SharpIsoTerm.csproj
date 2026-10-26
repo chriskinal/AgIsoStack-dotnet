@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The SharpIsoTerm contributors -->
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The terminal for a .NET host: VirtualTerminal over the native library (native/isoshim.h).
        net10.0 for the desktop (the library under runtimes/RID/native), net10.0-ios (the static

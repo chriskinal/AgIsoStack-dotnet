@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """drawing.iop: the drawing code's test pool. One data mask per theme (shapes, text, numbers,
 gauges, pictures, structure), an alarm mask and soft keys (masks of 12 and of 14); each sample is labelled with what it
 should look like. Plain, not pretty: a test fixture. MIT.

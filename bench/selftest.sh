@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # The in-process self-test (IsoShimSpike.RunAll: no bus, no gateway) on the iPad and the Android
 # tablet, and on Linux and Windows from the Mac; `dotnet run` in dotnet/console does the same on
 # the desktop.

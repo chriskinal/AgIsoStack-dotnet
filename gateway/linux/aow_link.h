@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The gateway end of the AOW link protocol, version 1: CAN frames between a gateway's channels
 // and a terminal (SharpIsoTerm's AowLink), over TCP. The specification is docs/TRANSPORT.md
 // section 5; bench/aowlink_check.py tests a running gateway against it. MIT.

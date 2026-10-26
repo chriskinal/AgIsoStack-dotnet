@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """inputs.iop: one data mask with every kind of input field, for the self-test's input run
 (dotnet/IsoShimSpike.cs RunInput checks these ids and positions). MIT.
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+
 System.Console.OutputEncoding = System.Text.Encoding.UTF8;  // Windows writes its OEM code page otherwise
 // Windows sleeps in 15.6 ms ticks unless asked for 1 ms: the tests step every 2 ms.
 if (System.OperatingSystem.IsWindows()) TimeBeginPeriod(1);

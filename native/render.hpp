@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The renderer: an implement's active mask and soft key mask flattened into a draw list (JSON,
 // docs/API.md), and the small JSON writer the shim's messages use.
 #pragma once

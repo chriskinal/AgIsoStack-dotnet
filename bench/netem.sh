@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # On the CM4: impair the relay's TCP traffic (port 2323 only) in both directions with netem, on
 # NETEM_DEV (default wlan0; eth0 works too, since ssh is left alone).
 #   netem.sh off | netem.sh set "NETEM ARGS"   (same args each way, e.g. "delay 25ms 10ms loss 1%")

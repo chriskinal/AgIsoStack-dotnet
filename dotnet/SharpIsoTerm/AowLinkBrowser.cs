@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Finding AOW link gateways on the local network (docs/TRANSPORT.md, "Finding a gateway"): they
 // announce themselves by DNS-SD as _aowlink._tcp. On the desktop and Android this asks with mDNS
 // queries from an ordinary port, which responders answer by unicast (RFC 6762 section 6.7), so it

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """Listen on hatcan2 and hatcan3 for SECS seconds: frames per source address on each, the first
 time each source appears, and how many frames the kernel dropped on our sockets. Every frame goes
 to frames.log as "iface kernel_ts_s id data" (hatcan3 is the wire as the implement side sees it)."""

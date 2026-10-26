@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The native interface (native/isoshim.h) as P/Invoke declarations: what VirtualTerminal is built
 // on, and what the self-test and the bench drive directly. Callbacks are static
 // [UnmanagedCallersOnly] methods (required under iOS AOT). Everything but isoshim_receive and

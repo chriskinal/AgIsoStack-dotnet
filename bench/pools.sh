@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # Draws every screen of every test pool and says which changed since the last run.
 #   bench/pools.sh [name...]   (default: all)
 # Pools: ours (testpools/*.iop, and upstream's dotnet/VT3TestPool.iop), whose screens are kept in

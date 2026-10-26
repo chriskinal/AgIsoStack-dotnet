@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // What a host configures, and the terminal's messages as types. The screen and edit messages stay
 // JSON (VirtualTerminal.Message): the page paints them, the host only relays them.
 using System;

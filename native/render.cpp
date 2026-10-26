@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // See render.hpp. The rules are ISO 11783-6 Annex B's, read from the standard and upstream's
 // object classes; GPL renderers (AgIsoVirtualTerminal) were not used.
 #include "render.hpp"

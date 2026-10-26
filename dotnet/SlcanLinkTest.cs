@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Self-test of the slcan adapter link: SlcanLink attached to VirtualTerminalStack, through a
 // simulated adapter whose bus is the self-test's implement (channel 1, upstream's VT client in
 // the native library). Checks the adapter's setup commands, frames both ways in slcan text, the

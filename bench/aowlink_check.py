@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """Checks a gateway against the AOW link protocol, version 1 (docs/TRANSPORT.md section 5): any
 gateway, ours or another's. Needs the gateway to have no client connected, and some traffic on
 its bus helps (the monitor check waits for a frame).

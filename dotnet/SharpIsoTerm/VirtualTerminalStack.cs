@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The stack for a .NET host (docs/API.md): one to four virtual terminals on one bus, as several
 // displays in one cab. It owns one thread, which runs the stack and raises every event; the
 // host's calls are carried to it. One per process: the native stack is one.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Self-test of the gateway link: AowLink attached to VirtualTerminalStack, against a scripted gateway on
 // loopback whose bus is the self-test's implement (channel 1, upstream's VT client in the native
 // library). Checks the hello, frames both ways, the round trip, a gateway gone silent, refusals

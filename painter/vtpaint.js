@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Reference painter for the terminal's draw list (docs/API.md), Canvas 2D. MIT.
 // No ISOBUS knowledge: it paints the items in order. AgOpenWeb's page starts from this.
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Stress test: does a TP/ETP transmit started from an application thread send its request-to-send
 // twice, while the stack's own thread runs the network manager's update?
 //

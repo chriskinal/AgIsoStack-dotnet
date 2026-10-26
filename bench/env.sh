@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # Sourced by the bench scripts: the devices, from bench/devices.env (not committed; see
 # devices.env.example), and where results go.
 BENCH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

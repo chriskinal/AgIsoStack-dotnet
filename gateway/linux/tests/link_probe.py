@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """The AOW link gateway on virtual CAN: starts aow-linkd on vcan1 and checks the parts that need a
 real interface: frames both ways (ids, flags, data, kernel timestamps), the bus drained when a
 control client connects, STATUS following the interface down and up, an interface that is

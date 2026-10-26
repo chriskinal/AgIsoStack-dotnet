@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """Walk every ETP batch (DPO, then its data packets) in frames.log, per interface and sender, and
 report batches whose sequence numbers are not 1..count, plus every abort. Also checks the relay's
 dump.log the same way (its "bus" lines: what the relay read from hatcan2)."""

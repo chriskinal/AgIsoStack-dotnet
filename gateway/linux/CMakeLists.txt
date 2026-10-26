@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # aow-linkd: the AOW link gateway for Linux (SocketCAN <-> TCP), and the protocol's gateway end
 # as a library (aow_link: no Linux in it) with its unit tests. MIT.
 #   cmake -S gateway/linux -B build && cmake --build build && ctest --test-dir build

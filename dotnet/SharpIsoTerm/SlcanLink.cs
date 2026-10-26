@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // A CAN adapter on this device that speaks slcan (the Lawicel ASCII protocol: CANable's stock
 // firmware and many serial adapters), reached through a serial port. It opens the adapter,
 // starts the bus at the bitrate, carries every frame both ways, and opens it again on its own

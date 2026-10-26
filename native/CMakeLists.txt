@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # isoshim: a C interface over AgIsoStack++ for .NET (P/Invoke), on macOS, iOS, Android, Linux and
 # Windows. The shim supplies the stack's hardware hooks itself, so only the stack's isobus and
 # utility libraries are linked: no hardware layer, no stack threads.

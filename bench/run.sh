@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # One bench run: relay up on the gateway, the terminal started on CLIENT (mac|android|ios), the
 # implement started on the gateway's other CAN interface, then wait for the terminal's verdict
 # and collect every log into out/NAME.txt.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Self-test: drives the native isoshim (AgIsoStack++) from C#. C# is the CAN bus: every frame the
 // stack sends arrives in OnSend, on the thread that calls isoshim_step, and is handed to the other
 // channel (the terminal on 0, upstream's VT client on 1).

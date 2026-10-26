@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // See isoshim.h. Built on AgIsoStack++'s isobus and utility libraries only: this file provides the
 // stack's hardware hooks (can_hardware_abstraction.hpp) itself, so HardwareIntegration and its
 // threads stay out.

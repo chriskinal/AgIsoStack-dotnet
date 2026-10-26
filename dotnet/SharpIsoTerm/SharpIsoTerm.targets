@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The SharpIsoTerm contributors -->
 <Project>
   <!-- From the package (buildTransitive/): links the terminal's static library into an iOS app. -->
   <ItemGroup Condition="$(TargetFramework.Contains('-ios'))">

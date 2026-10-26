@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # Copies the gateway side of the bench (the AOW link gateway and its checker, capture, checks, netem, gateway.sh) to the gateway,
 # and the test implements if they are built (bench/implement/build.sh) with the pool they upload.
 . "$(dirname "$0")/env.sh"

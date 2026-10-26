@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Bench: the terminal on a real bus through an AOW link gateway (bench/aowlink_gateway.py on the CM4,
 // docs/TRANSPORT.md section 5), with the classes a host uses: AowLink attached to VirtualTerminalStack.
 // Waits for the example implement (NAME function 16), shows it, presses its alarm soft key (5000),

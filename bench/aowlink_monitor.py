@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """Records what an AOW link gateway sends out, as a monitor client (role 1): every FRAME both ways,
 with the gateway's bus time, to a file, until stopped (SIGTERM) or the link goes. For comparing
 with a capture on the bus (sniff.py's frames.log) when something arrives twice or not at all.

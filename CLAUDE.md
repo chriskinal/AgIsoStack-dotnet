@@ -45,6 +45,9 @@ to continue it in its own repo).
 - **MIT.** Nothing GPL comes in (AgOpenWeb-HAT, the Teensy firmware and AgIsoVirtualTerminal are
   GPL: read them, do not copy from them). The one exception is the user's own: `gateway/linux`
   came from AgOpenWeb-HAT, all the user's code, relicensed MIT by the user (2026-10-26).
+  Every file of ours starts with `SPDX-License-Identifier: MIT` and `Copyright (c) 2026 The
+  SharpIsoTerm contributors` in its own comment style (after a shebang, `<?xml`, `<!DOCTYPE`);
+  not the upstream patches in `bench/implement/`, the binary pools or generated files.
 - **Nothing public without the user's OK**: upstream issues, pull requests, comments. The repo is
   public (since 2026-10-26, the user's call), and so are its releases.
 - **Test app IDs:** `com.agopenweb.isostack-tests` (iOS), `com.agopenweb.isostack_tests`

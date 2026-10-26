@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // Minimal test harness: CHECK records a failure and carries on; finish() reports and
 // gives the exit code.
 #pragma once

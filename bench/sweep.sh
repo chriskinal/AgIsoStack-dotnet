@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # N runs under one link impairment, one summary line each (out/net-TAG-i.txt for the full logs).
 #   sweep.sh CLIENT IMPLEMENT N TAG "NETEM ARGS"|none [STALL_AFTER STALL_FOR]
 . "$(dirname "$0")/env.sh"

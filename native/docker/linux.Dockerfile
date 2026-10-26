@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # The Linux build: Debian 12 (glibc 2.36, as Raspberry Pi OS bookworm), so the library loads on
 # that and anything newer. CMake 3.28+ from bookworm-backports.
 FROM debian:bookworm

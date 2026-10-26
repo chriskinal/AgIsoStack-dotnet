@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # On the gateway: the AOW link gateway up | implement start | stop all. Logs in ~/vtbench (GW_DIR).
 #   gateway.sh relay | gateway.sh implement [BINARY] | gateway.sh stop | gateway.sh check | gateway.sh clients
 # With the HAT's aow-linkd service running (AgOpenWeb-HAT 0.2.24 on), relay leaves the link to it

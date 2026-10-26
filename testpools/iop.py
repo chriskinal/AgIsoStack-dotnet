@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+
 """A small ISOBUS object pool writer for test pools, from ISO 11783-6 Annex B (VT version 3 and 4
 object layouts). MIT. Each function appends one object; save() writes the pool.
 

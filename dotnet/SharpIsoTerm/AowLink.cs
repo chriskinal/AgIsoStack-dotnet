@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // The client end of the gateway protocol (docs/TRANSPORT.md section 5, "AOW link" version 1): one
 // TCP connection to a gateway on the bus, every CAN frame both ways. It connects, says hello,
 // keeps a heartbeat, drops the link after 1 s of silence and connects again on its own.

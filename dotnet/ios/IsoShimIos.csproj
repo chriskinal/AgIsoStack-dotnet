@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The SharpIsoTerm contributors -->
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../Local.props" Condition="Exists('../Local.props')" />
   <PropertyGroup>

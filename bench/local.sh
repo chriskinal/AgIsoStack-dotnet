@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The SharpIsoTerm contributors
+#
 # The bench without hardware: in one Linux container (Docker, OrbStack, privileged for vcan and
 # netem), the reference gateway on a virtual CAN bus, upstream's example implement on the same bus,
 # and the terminal (the console app's bench mode: AowLink and VirtualTerminal) over loopback TCP.

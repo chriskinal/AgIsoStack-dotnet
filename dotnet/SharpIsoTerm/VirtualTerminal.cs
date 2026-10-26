@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The SharpIsoTerm contributors
+//
 // One ISOBUS virtual terminal of a VirtualTerminalStack (docs/API.md): what one display in the cab
 // shows, and the operator's input on it.
 using System;

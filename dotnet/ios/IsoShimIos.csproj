@@ -20,6 +20,7 @@
     <Compile Include="../VirtualTerminalTest.cs" />
     <Compile Include="../AowLinkTest.cs" />
     <Compile Include="../SlcanLinkTest.cs" />
+    <Compile Include="../AowLinkBrowserTest.cs" />
     <Compile Include="../IsoShimSpike.cs" />
     <Compile Include="../IsoShimBench.cs" />
     <EmbeddedResource Include="../VT3TestPool.iop" LogicalName="VT3TestPool.iop" />

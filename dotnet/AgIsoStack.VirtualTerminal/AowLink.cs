@@ -57,6 +57,10 @@ public sealed class AowLink : IDisposable
     public const byte Version = 1;
     // ConnectMs: a connection attempt made during a cut waits no longer than this once it is over.
     const int HeartbeatMs = 100, SilenceMs = 1000, HelloMs = 2000, RetryMs = 250, VersionRetryMs = 5000, ConnectMs = 500;
+    // Refused as busy: at once again for a while (our own old connection, until the gateway's
+    // silence rule closes it), then seldom (another terminal has the gateway; each refusal is a
+    // line in the gateway's log).
+    const int BusyFastMs = 1500, BusyRetryMs = 5000;
     const byte Hello = 1, Frame = 2, Heartbeat = 3, Status = 4, Close = 5;
     static readonly byte[] Magic = "AOWL"u8.ToArray();
 
@@ -90,6 +94,9 @@ public sealed class AowLink : IDisposable
     public event Action<GatewayInfo>? Connected;
     /// <summary>The link is down, and why. It is tried again on its own.</summary>
     public event Action<LinkCloseReason, string>? Disconnected;
+    /// <summary>A try that ended before the link came up, and why: <see cref="LinkCloseReason.Busy"/>
+    /// with who has the gateway, no route, no HELLO, ... It is tried again on its own.</summary>
+    public event Action<LinkCloseReason, string>? ConnectFailed;
     /// <summary>A bus's state, on connecting, on any change and every second.</summary>
     public event Action<BusStatus>? StatusReceived;
     /// <summary>A round trip in milliseconds, from each heartbeat.</summary>
@@ -176,11 +183,15 @@ public sealed class AowLink : IDisposable
 
     void Run()
     {
+        long busySince = -1;
         while (!stopping)
         {
             var (reason, detail) = Connection();
             if (stopping) break;
-            int wait = reason == LinkCloseReason.Version ? VersionRetryMs : RetryMs;
+            if (reason != LinkCloseReason.Busy) busySince = -1;
+            else if (busySince < 0) busySince = clock.ElapsedMilliseconds;
+            int wait = reason == LinkCloseReason.Version ? VersionRetryMs
+                : busySince >= 0 && clock.ElapsedMilliseconds - busySince > BusyFastMs ? BusyRetryMs : RetryMs;
             for (var end = clock.ElapsedMilliseconds + wait; !stopping && clock.ElapsedMilliseconds < end;) Thread.Sleep(10);
         }
     }
@@ -212,6 +223,7 @@ public sealed class AowLink : IDisposable
         socket = null;
         if (stopping) result = (LinkCloseReason.ShuttingDown, "stopped");
         if (wasUp) Raise(() => Disconnected?.Invoke(result.Reason, result.Detail));
+        else if (!stopping) Raise(() => ConnectFailed?.Invoke(result.Reason, result.Detail));
         return result;
     }
 

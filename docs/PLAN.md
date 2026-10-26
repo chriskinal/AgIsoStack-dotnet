@@ -93,8 +93,12 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    Version 1 approved and built the same day: `AowLink` in the package, the reference gateway
    and a conformance checker in `bench/`, the bench on it (RESULTS.md: clean runs on all three
    devices, cuts mid-upload recovered). The HAT's gateway, `aow-linkd`, built in AgOpenWeb-HAT
-   2026-10-25 (0.2.24) and benched; its status on the HAT's ISOBUS page in 0.2.25. Next: an
-   ESP32 gateway, a pairing key. An adapter on the host itself: slcan first (`SlcanLink`, 2026-10-25:
+   2026-10-25 (0.2.24) and benched; its status on the HAT's ISOBUS page in 0.2.25. No pairing key
+   (decided 2026-10-25: the machine network is trusted, TRANSPORT.md Security). Finding gateways
+   by DNS-SD: `AowLinkBrowser` (2026-10-25); on iOS it uses `NSNetServiceBrowser`, deprecated
+   since iOS 15 but working, because Network.framework's `NWBrowser` gives no address without
+   connecting to the gateway: to revisit (the DNS-SD C API is the other way). Next: an ESP32
+   gateway. An adapter on the host itself: slcan first (`SlcanLink`, 2026-10-25:
    desktop serial ports and Android USB serial; chosen over gs_usb, PEAK and SocketCAN for the first
    round); iOS can't reach USB adapters.
 6. **The terminal in AgOpenWeb** is the app's work and plan, in that repo (not written yet). What

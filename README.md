@@ -101,14 +101,15 @@ calls come from any thread. One stack per process. How to build a host on it:
 [docs/GUIDE.md](docs/GUIDE.md); every member and message: [docs/API.md](docs/API.md); for AI
 assistants: [llms.txt](llms.txt).
 An slcan adapter plugged into the device (a CANable) is `SlcanLink` instead of `AowLink`, wired
-the same way. Without either (SocketCAN, another adapter), `Send` and `stack.Receive(id, data, extended,
+the same way. `AowLinkBrowser` finds gateways on the network by DNS-SD, for the operator to pick by
+name. Without either (SocketCAN, another adapter), `Send` and `stack.Receive(id, data, extended,
 channel)` carry the frames; `stack.LinkDown()` and `stack.LinkUp()` are for any link that
 can drop.
 
 ## Test
 
 **Self-test** (no bus): `IsoShimSpike.RunAll` puts a terminal and an implement in one process,
-C# carrying every frame between them. Eleven runs: an upload of upstream's VT3 example pool
+C# carrying every frame between them. Twelve runs: an upload of upstream's VT3 example pool
 (150 kB) at 16 and at 255 frames per clear-to-send, each ending in a soft key round trip and
 storing the pool; a stop the moment the pool starts parsing; a full run after it; and one where
 the implement loads the stored pool instead of uploading. It checks that both masks were drawn
@@ -128,7 +129,9 @@ implement, through a scripted gateway on loopback: the hello, the pool over the 
 gone silent (dropped after 1 s, back at once), refusals while busy, and a soft key held when the
 link went, aborted when it is back. The eleventh does the same through a simulated slcan adapter
 (`SlcanLink`): its setup commands, frames as slcan text, replies and junk lines ignored, an
-unplug and a replug.
+unplug and a replug. The twelfth reads mDNS answers built as responders write them
+(`AowLinkBrowser`, desktop and Android): compressed names, answers in pieces, a goodbye, other
+services, and damaged answers refused.
 
 With a pool file, `screens` uploads that pool instead and has the test implement show each of its
 data and alarm masks in turn. `bench/pools.sh` does that for every pool in `testpools/`: our

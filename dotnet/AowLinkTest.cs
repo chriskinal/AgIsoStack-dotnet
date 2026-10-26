@@ -242,6 +242,8 @@ public static class AowLinkTest
         // After Attach, so the stack has queued a link change before the checks act on it.
         link.Connected += g => { info = g; Interlocked.Increment(ref ups); };
         link.Disconnected += (why, _) => { lastReason = why; Interlocked.Increment(ref downs); };
+        int busyTries = 0; string busyText = "";
+        link.ConnectFailed += (why, text) => { if (why == LinkCloseReason.Busy) { busyText = text; Interlocked.Increment(ref busyTries); } };
         stack.Start();
         try
         {
@@ -285,7 +287,19 @@ public static class AowLinkTest
                 gateway.RefuseBusy = 2;
                 gateway.Drop();
                 Check("dropped, refused busy twice, then back", await Until(() => ups == 3, 4000) && gateway.Refused == 2);
+
                 Check("the terminal still has the implement", active != null && sets?.Any(s => s.State == PoolState.Ready) == true);
+                // Busy for good (another terminal has it): after 1.5 s of refusals, one try every 5 s.
+                gateway.RefuseBusy = 1000;
+                int refusedBefore = gateway.Refused;
+                gateway.Drop();
+                await Task.Delay(4000);
+                int fastAndSlow = gateway.Refused - refusedBefore;
+                Check($"busy for good: {fastAndSlow} refusals in 4 s, quick for 1.5 s then every 5 s", fastAndSlow >= 3 && fastAndSlow <= 9);
+                Check("each refusal told by ConnectFailed, with the gateway's text", busyTries == gateway.Refused && busyText == "busy");
+                gateway.RefuseBusy = 0;
+                Check("free again: back within 5 s", await Until(() => ups == 4, 6000));
+                Check("and has its implement again", await Until(() => active != null && sets?.Any(s => s.State == PoolState.Ready) == true, 20000));
             }
         }
         finally

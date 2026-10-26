@@ -30,6 +30,11 @@ public sealed class AndroidUsbSerialPort : ISerialPort
     UsbEndpoint? input, output;
     UsbDevice? device;
     byte[] readBuffer = new byte[512];
+    // Reads queued on the adapter all the time (Android 8 and later): a full bus at 250 kbit/s is
+    // about 50 kB/s of slcan text, more than one 64-byte transfer at a time keeps up with, and an
+    // adapter with nothing to send into drops frames.
+    const int Queued = 16, QueuedSize = 512;
+    UsbRequest[]? requests;
     long lastPresenceCheck;
     static long permissionAskedAt = -1;
 
@@ -99,11 +104,26 @@ public sealed class AndroidUsbSerialPort : ISerialPort
         input = inEp;
         output = outEp;
         readBuffer = new byte[Math.Max(64, inEp.MaxPacketSize)];
+        if (OperatingSystem.IsAndroidVersionAtLeast(26))
+        {
+            var queued = new UsbRequest[Queued];
+            for (int i = 0; i < Queued; i++)
+            {
+                var r = new UsbRequest();
+                r.Initialize(c, inEp);
+                var b = Java.Nio.ByteBuffer.AllocateDirect(QueuedSize);
+                r.ClientData = b;
+                r.Queue(b);
+                queued[i] = r;
+            }
+            requests = queued;
+        }
     }
 
     public int Read(byte[] buffer, int offset, int count)
     {
         var c = connection ?? throw new IOException("not open");
+        if (requests != null && OperatingSystem.IsAndroidVersionAtLeast(26)) return ReadQueued(c, buffer, offset, count);
         int n = c.BulkTransfer(input, readBuffer, Math.Min(count, readBuffer.Length), TimeoutMs);
         if (n > 0)
         {
@@ -113,6 +133,36 @@ public sealed class AndroidUsbSerialPort : ISerialPort
         // -1 is a timeout as well as a failure: gone only if the device is.
         CheckPresent();
         return 0;
+    }
+
+    // The bytes of one finished queued read (any of them: they finish in order on one endpoint),
+    // that read queued again at once. Count is at least a queued read's size (SlcanLink reads 4 kB).
+    [System.Runtime.Versioning.SupportedOSPlatform("android26.0")]
+    int ReadQueued(UsbDeviceConnection c, byte[] buffer, int offset, int count)
+    {
+        UsbRequest? done;
+        try { done = c.RequestWait(TimeoutMs); }
+        catch (Java.Util.Concurrent.TimeoutException)
+        {
+            CheckPresent();
+            return 0;
+        }
+        if (done?.ClientData is not Java.Nio.ByteBuffer b)
+        {
+            CheckPresent();
+            return 0;
+        }
+        b.Flip();
+        int n = Math.Min(b.Remaining(), count);
+        b.Get(buffer, offset, n);
+        b.Clear();
+        if (!done.Queue(b))
+        {
+            lastPresenceCheck = 0;
+            CheckPresent();
+            throw new IOException($"{name}: read failed");
+        }
+        return n;
     }
 
     public void Write(byte[] buffer, int offset, int count)
@@ -150,6 +200,13 @@ public sealed class AndroidUsbSerialPort : ISerialPort
         var c = connection;
         connection = null;
         if (c == null) return;
+        var queued = requests;
+        requests = null;
+        if (queued != null)
+            foreach (var r in queued)
+            {
+                try { r.Cancel(); r.Close(); } catch { }
+            }
         try { if (data != null) c.ReleaseInterface(data); } catch { }
         try { c.Close(); } catch { }
     }

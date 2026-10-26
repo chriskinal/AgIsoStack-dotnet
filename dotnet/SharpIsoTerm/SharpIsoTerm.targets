@@ -1,8 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The SharpIsoTerm contributors -->
 <Project>
-  <!-- From the package (buildTransitive/): links the terminal's static library into an iOS app. -->
-  <ItemGroup Condition="$(TargetFramework.Contains('-ios'))">
-    <NativeReference Include="$(MSBuildThisFileDirectory)../../runtimes/ios-arm64/native/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
+  <!-- From the package (buildTransitive/): links the terminal's static library into an iOS app, the
+       simulator's (arm64 and x86_64) for an iossimulator-* runtime identifier, else the device's. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-ios')) And $(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="$(MSBuildThisFileDirectory)../runtimes/iossimulator/native/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.Contains('-ios')) And !$(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="$(MSBuildThisFileDirectory)../runtimes/ios-arm64/native/libisoshim-all.a" Kind="Static" ForceLoad="true" IsCxx="true" />
   </ItemGroup>
 </Project>

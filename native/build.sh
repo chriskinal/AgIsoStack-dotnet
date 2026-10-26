@@ -3,9 +3,11 @@
 # Copyright (c) 2026 The SharpIsoTerm contributors
 #
 # Builds the native library into native/build-TARGET/.
-#   native/build.sh mac|ios|android|linux|windows [cmake args...]
+#   native/build.sh mac|ios|ios-simulator|android|linux|windows [cmake args...]
 #     mac      libisoshim.dylib, universal (arm64 and x86_64)
 #     ios      libisoshim-all.a: the shim and the stack's libraries in one static archive, arm64
+#     ios-simulator  the same for the iOS simulator, universal (arm64 and x86_64), in
+#              native/build-ios-simulator/
 #     android  libisoshim.so for each ABI in $ANDROID_ABIS (default arm64-v8a armeabi-v7a x86_64,
 #              the ones AgOpenWeb ships), in native/build-android-ABI/; the NDK from
 #              $ANDROID_NDK, else the newest under ~/Library/Android/sdk/ndk
@@ -17,7 +19,7 @@
 # -DISOSHIM_STACK_DIR=/path/to/AgIsoStack-plus-plus builds against a local checkout.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-TARGET=${1:?usage: build.sh mac|ios|android|linux|windows [cmake args...]}
+TARGET=${1:?usage: build.sh mac|ios|ios-simulator|android|linux|windows [cmake args...]}
 shift
 B=$HERE/build-$TARGET
 case $TARGET in
@@ -43,6 +45,9 @@ case $TARGET in
   ios)
     cmake -S "$HERE" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS \
       -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 "$@" ;;
+  ios-simulator)
+    cmake -S "$HERE" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS \
+      -DCMAKE_OSX_SYSROOT=iphonesimulator "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 "$@" ;;
   android)
     NDK=${ANDROID_NDK:-$(ls -d "$HOME"/Library/Android/sdk/ndk/* 2>/dev/null | sort -V | tail -1)}
     [ -d "$NDK" ] || { echo "no Android NDK (set ANDROID_NDK)" >&2; exit 1; }
@@ -70,7 +75,7 @@ case $TARGET in
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 cmake --build "$B" --target isoshim
-if [ "$TARGET" = ios ]; then
+if [ "$TARGET" = ios ] || [ "$TARGET" = ios-simulator ]; then
   libs=$(find "$B" -name libIsobus.a -o -name libUtility.a | grep -v CMakeFiles)
   libtool -static -o "$B/libisoshim-all.a" "$B/libisoshim.a" $libs 2>&1 | grep -v "same member name" || true
   echo "$B/libisoshim-all.a"

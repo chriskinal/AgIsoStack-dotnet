@@ -4,7 +4,7 @@
 // isoshim_set_log belongs to the thread that calls isoshim_step.
 using System.Runtime.InteropServices;
 
-namespace AgIsoStack.Interop;
+namespace SharpIsoTerm.Interop;
 
 public static unsafe class IsoShim
 {

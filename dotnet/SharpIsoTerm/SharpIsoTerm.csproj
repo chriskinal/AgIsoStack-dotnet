@@ -8,13 +8,13 @@
   <PropertyGroup>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$(DesktopOnly)' != 'true'">net10.0;net10.0-ios;net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX')) Or '$(DesktopOnly)' == 'true'">net10.0</TargetFrameworks>
-    <RootNamespace>AgIsoStack</RootNamespace>
+    <RootNamespace>SharpIsoTerm</RootNamespace>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <PackageId>AgIsoStack.VirtualTerminal</PackageId>
+    <PackageId>SharpIsoTerm</PackageId>
     <Version>0.1.0</Version>
     <Description>An ISOBUS virtual terminal for .NET: AgIsoStack++'s VT server driven on one thread, the active screen as a draw list.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -39,7 +39,8 @@
     <None Include="$(Native)build-linux-arm64/libisoshim.so" Condition="Exists('$(Native)build-linux-arm64/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-arm64/native/" Visible="false" />
     <None Include="$(Native)build-windows/isoshim.dll" Condition="Exists('$(Native)build-windows/isoshim.dll')" Pack="true" PackagePath="runtimes/win-x64/native/" Visible="false" />
     <None Include="$(Native)build-ios/libisoshim-all.a" Condition="Exists('$(Native)build-ios/libisoshim-all.a')" Pack="true" PackagePath="runtimes/ios-arm64/native/" Visible="false" />
-    <None Include="AgIsoStack.VirtualTerminal.targets" Pack="true" PackagePath="buildTransitive/" />
+    <None Include="SharpIsoTerm.targets" Pack="true" PackagePath="buildTransitive/" />
+    <None Include="$(MSBuildThisFileDirectory)../../THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
   <!-- Serial ports for slcan adapters on the desktop (Android has its own USB serial port). -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">

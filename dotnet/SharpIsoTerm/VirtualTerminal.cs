@@ -4,9 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
-using static AgIsoStack.Interop.IsoShim;
+using static SharpIsoTerm.Interop.IsoShim;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>
 /// One terminal: its screens and editors as JSON through <see cref="Message"/> (for the page to

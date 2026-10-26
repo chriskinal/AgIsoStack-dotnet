@@ -10,10 +10,10 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using AgIsoStack.Interop;
-using static AgIsoStack.Interop.IsoShim;
+using SharpIsoTerm.Interop;
+using static SharpIsoTerm.Interop.IsoShim;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>
 /// The terminals and their bus: frames in with <see cref="Receive(uint, ReadOnlySpan{byte}, bool, int)"/>,

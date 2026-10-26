@@ -1,6 +1,7 @@
-# CLAUDE.md - AgIsoStack-dotnet
+# CLAUDE.md - SharpIsoTerm
 
-AgIsoStack++ for .NET: a C interface (`native/isoshim.h`, `native/isoshim.cpp`) called by
+An ISOBUS virtual terminal for .NET, built on AgIsoStack++ (not part of that project; formerly
+named AgIsoStack-dotnet, renamed 2026-10-26 so it isn't taken for one): a C interface (`native/isoshim.h`, `native/isoshim.cpp`) called by
 P/Invoke from C# (`dotnet/`), and the work on carrying CAN frames between a gateway and the
 stack over a network. Started 2026-10-24 out of the AgOpenWeb-HAT work (the user moved it here
 to continue it in its own repo).

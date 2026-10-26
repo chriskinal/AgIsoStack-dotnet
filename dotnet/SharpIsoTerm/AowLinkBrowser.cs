@@ -17,7 +17,7 @@ using System.Threading;
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("IsoShimAndroid")]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("IsoShimIos")]
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>A gateway found on the network: its name (the DNS-SD instance, for the operator),
 /// where to connect (an IPv4 address and port), its host name and its TXT record.</summary>

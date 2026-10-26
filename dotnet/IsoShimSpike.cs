@@ -12,8 +12,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using AgIsoStack.Interop;
-using static AgIsoStack.Interop.IsoShim;
+using SharpIsoTerm.Interop;
+using static SharpIsoTerm.Interop.IsoShim;
 
 public static unsafe class IsoShimSpike
 {

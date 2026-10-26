@@ -10,7 +10,7 @@ using Android.App;
 using Android.Content;
 using Android.Hardware.Usb;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>
 /// A CDC-ACM device on Android, named <c>usb:VVVV:PPPP</c> (vendor and product id, hex): the
@@ -20,7 +20,7 @@ namespace AgIsoStack;
 /// </summary>
 public sealed class AndroidUsbSerialPort : ISerialPort
 {
-    const string PermissionAction = "AgIsoStack.USB_PERMISSION";
+    const string PermissionAction = "SharpIsoTerm.USB_PERMISSION";
     const int UsbClassCdcData = 10;
     const int TimeoutMs = 100;
 

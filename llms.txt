@@ -1,11 +1,11 @@
-# AgIsoStack.VirtualTerminal
+# SharpIsoTerm
 
 > An ISOBUS virtual terminal (ISO 11783-6) for .NET 10 on macOS, Linux, Windows, iOS and Android:
 > AgIsoStack++'s VT server run on one thread (one to four terminals, as displays in one cab), with
 > each terminal's shown screen sent out as a JSON draw list for a page to paint. The host supplies CAN frames, a page, and optionally pool storage. MIT.
 
 Implements bring their own UI (object pools), so a host designs no screens. It forwards JSON to a
-page and turns touches into calls. Package `AgIsoStack.VirtualTerminal`, namespace `AgIsoStack`.
+page and turns touches into calls. Package `SharpIsoTerm`, namespace `SharpIsoTerm`.
 
 Rules an integration must keep:
 

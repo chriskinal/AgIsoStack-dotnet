@@ -8,8 +8,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AgIsoStack;
-using AgIsoStack.Interop;
+using SharpIsoTerm;
+using SharpIsoTerm.Interop;
 
 public static class VirtualTerminalTest
 {

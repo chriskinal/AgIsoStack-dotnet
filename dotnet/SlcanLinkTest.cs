@@ -12,8 +12,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AgIsoStack;
-using AgIsoStack.Interop;
+using SharpIsoTerm;
+using SharpIsoTerm.Interop;
 
 public static class SlcanLinkTest
 {

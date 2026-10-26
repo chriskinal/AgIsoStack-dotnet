@@ -64,6 +64,7 @@ The package includes a native library for every platform that was built when it 
 | Linux | `linux-x64`, `linux-arm64` | glibc 2.36 or later (Raspberry Pi OS bookworm, Debian 12); not musl |
 | Windows 10+ | `win-x64` | needs only the Windows C runtime (UCRT); no arm64 yet |
 | iOS 15+ | `ios-arm64` | a static library, linked into the app by the package's build targets; full AOT works |
+| iOS simulator | `iossimulator-arm64`, `iossimulator-x64` | the same, built for the simulator |
 | Android 6+ (API 23) | arm64-v8a, armeabi-v7a, x86_64 | inside the package |
 
 Target `net10.0`, `net10.0-ios` or `net10.0-android`. A `DllNotFoundException` means the

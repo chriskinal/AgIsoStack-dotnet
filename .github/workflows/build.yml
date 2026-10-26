@@ -59,6 +59,7 @@ jobs:
       - run: command -v ninja || brew install ninja
       - run: native/build.sh mac
       - run: native/build.sh ios
+      - run: native/build.sh ios-simulator
       - uses: actions/upload-artifact@v7
         with:
           name: native-mac
@@ -68,6 +69,11 @@ jobs:
         with:
           name: native-ios
           path: native/build-ios/libisoshim-all.a
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-ios-simulator
+          path: native/build-ios-simulator/libisoshim-all.a
           if-no-files-found: error
 
   android:
@@ -194,9 +200,10 @@ jobs:
           path: artifacts
       - name: libraries into native/build-*/
         run: |
-          mkdir -p native/build-mac native/build-ios native/build-windows native/build-linux-x64 native/build-linux-arm64
+          mkdir -p native/build-mac native/build-ios native/build-ios-simulator native/build-windows native/build-linux-x64 native/build-linux-arm64
           cp artifacts/native-mac/libisoshim.dylib native/build-mac/
           cp artifacts/native-ios/libisoshim-all.a native/build-ios/
+          cp artifacts/native-ios-simulator/libisoshim-all.a native/build-ios-simulator/
           cp artifacts/native-windows/isoshim.dll native/build-windows/
           cp artifacts/native-linux-x64/libisoshim.so native/build-linux-x64/
           cp artifacts/native-linux-arm64/libisoshim.so native/build-linux-arm64/
@@ -218,7 +225,7 @@ jobs:
       - name: every runtime in the package
         run: |
           unzip -l out/SharpIsoTerm.$VERSION.nupkg | tee contents.txt
-          for f in runtimes/osx/native/libisoshim.dylib runtimes/ios-arm64/native/libisoshim-all.a \
+          for f in runtimes/osx/native/libisoshim.dylib runtimes/ios-arm64/native/libisoshim-all.a runtimes/iossimulator/native/libisoshim-all.a \
                    runtimes/linux-x64/native/libisoshim.so runtimes/linux-arm64/native/libisoshim.so \
                    runtimes/win-x64/native/isoshim.dll lib/net10.0/SharpIsoTerm.dll \
                    lib/net10.0-ios lib/net10.0-android buildTransitive/SharpIsoTerm.targets THIRD-PARTY-NOTICES.txt; do
@@ -262,6 +269,7 @@ jobs:
           }
           zipit osx artifacts/native-mac/libisoshim.dylib
           zipit ios-arm64 artifacts/native-ios/libisoshim-all.a
+          zipit iossimulator artifacts/native-ios-simulator/libisoshim-all.a
           zipit linux-x64 artifacts/native-linux-x64/libisoshim.so
           zipit linux-arm64 artifacts/native-linux-arm64/libisoshim.so
           zipit win-x64 artifacts/native-windows/isoshim.dll

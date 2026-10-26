@@ -40,6 +40,7 @@ by it; AgIsoStack++'s licence is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICE
 ```sh
 native/build.sh mac        # native/build-mac/libisoshim.dylib (arm64 and x86_64)
 native/build.sh ios        # native/build-ios/libisoshim-all.a (the shim and the stack, one archive)
+native/build.sh ios-simulator   # native/build-ios-simulator/libisoshim-all.a (arm64 and x86_64)
 native/build.sh android    # native/build-android-ABI/libisoshim.so (arm64-v8a, armeabi-v7a, x86_64)
 native/build.sh linux      # native/build-linux-RID/libisoshim.so (x64, arm64; on a Mac in Docker)
 native/build.sh windows    # native/build-windows/isoshim.dll (x64; llvm-mingw in Docker)
@@ -49,8 +50,9 @@ cmake -S gateway/linux -B build-gateway && cmake --build build-gateway   # aow-l
 
 The package (`net10.0`, `net10.0-ios`, `net10.0-android`) takes each native library that is
 built: macOS under `runtimes/osx`, Linux under `runtimes/linux-x64` and `linux-arm64`, Windows
-under `runtimes/win-x64`, iOS under `runtimes/ios-arm64` with a `buildTransitive` target that
-links it into the app, Android inside the `.aar`. All of them build on the Mac: Linux and Windows
+under `runtimes/win-x64`, iOS under `runtimes/ios-arm64` and the iOS simulator under
+`runtimes/iossimulator`, with a `buildTransitive` target that links the one for the app's runtime
+identifier, Android inside the `.aar`. All of them build on the Mac: Linux and Windows
 in Docker (OrbStack). Linux is built on Debian 12, so it loads on glibc 2.36 (Raspberry Pi OS
 bookworm) and later. Windows is cross-compiled with llvm-mingw, the C++ runtime linked in: the DLL
 needs only the Windows C runtime (UCRT, in Windows 10 and later).

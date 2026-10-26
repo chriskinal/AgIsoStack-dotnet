@@ -17,7 +17,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageId>SharpIsoTerm</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Description>An ISOBUS virtual terminal for .NET: AgIsoStack++'s VT server driven on one thread, the active screen as a draw list.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Native>$(MSBuildThisFileDirectory)../../native/</Native>
@@ -32,15 +32,17 @@
 
   <!-- The package: each native library that is built, under runtimes/ (the multi-target pack sees
        only items outside the per-framework conditions). iOS: the iOS SDK packs native libraries
-       only into binding projects, so the static library goes under runtimes/ and buildTransitive/
-       adds it to the app; an app referencing this project links native/build-ios/libisoshim-all.a
-       itself. Android: in the .aar, below. -->
+       only into binding projects, so the static libraries go under runtimes/ (ios-arm64 for devices,
+       iossimulator universal for the simulator) and buildTransitive/ adds the one for the app's
+       runtime identifier; an app referencing this project links native/build-ios/libisoshim-all.a
+       (or build-ios-simulator/) itself. Android: in the .aar, below. -->
   <ItemGroup>
     <None Include="$(Native)build-mac/libisoshim.dylib" Condition="Exists('$(Native)build-mac/libisoshim.dylib')" Pack="true" PackagePath="runtimes/osx/native/" Visible="false" />
     <None Include="$(Native)build-linux-x64/libisoshim.so" Condition="Exists('$(Native)build-linux-x64/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-x64/native/" Visible="false" />
     <None Include="$(Native)build-linux-arm64/libisoshim.so" Condition="Exists('$(Native)build-linux-arm64/libisoshim.so')" Pack="true" PackagePath="runtimes/linux-arm64/native/" Visible="false" />
     <None Include="$(Native)build-windows/isoshim.dll" Condition="Exists('$(Native)build-windows/isoshim.dll')" Pack="true" PackagePath="runtimes/win-x64/native/" Visible="false" />
     <None Include="$(Native)build-ios/libisoshim-all.a" Condition="Exists('$(Native)build-ios/libisoshim-all.a')" Pack="true" PackagePath="runtimes/ios-arm64/native/" Visible="false" />
+    <None Include="$(Native)build-ios-simulator/libisoshim-all.a" Condition="Exists('$(Native)build-ios-simulator/libisoshim-all.a')" Pack="true" PackagePath="runtimes/iossimulator/native/" Visible="false" />
     <None Include="SharpIsoTerm.targets" Pack="true" PackagePath="buildTransitive/" />
     <None Include="$(MSBuildThisFileDirectory)../../THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>

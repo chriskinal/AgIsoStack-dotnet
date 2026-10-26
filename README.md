@@ -1,8 +1,9 @@
-# AgIsoStack-dotnet
+# SharpIsoTerm
 
-[AgIsoStack++](https://github.com/Open-Agriculture/AgIsoStack-plus-plus) for .NET: a small C
-interface over the stack (`native/`), called from C# by P/Invoke (`dotnet/`), on macOS, iOS,
-Android, Linux and Windows. The caller carries the CAN frames, so the bus can be anything: a
+An ISOBUS virtual terminal for .NET, built on
+[AgIsoStack++](https://github.com/Open-Agriculture/AgIsoStack-plus-plus): a small C interface over
+that stack (`native/`), called from C# by P/Invoke (`dotnet/`), on macOS, iOS, Android, Linux and
+Windows. The caller carries the CAN frames, so the bus can be anything: a
 SocketCAN interface, a USB adapter, or a CAN-to-network gateway over TCP or Wi-Fi.
 
 **Status:** a virtual terminal for AgOpenWeb's VT card ([docs/API.md](docs/API.md)): a
@@ -10,13 +11,14 @@ configuration, stored pool versions, the connected implements, the active screen
 that a page paints ([painter/vtpaint.js](painter/vtpaint.js)), soft keys, buttons, input fields,
 alarms and audio, one to four terminals on one bus (as several displays in one cab); in C#
 `VirtualTerminalStack` and its `VirtualTerminal`s, packaged with the native libraries
-(`AgIsoStack.VirtualTerminal`). Built against upstream HEAD. The first surface (the spike) passed
+(`SharpIsoTerm`). Built against upstream HEAD. The first surface (the spike) passed
 on a Mac, a Galaxy Tab S7 FE (Android 14) and an iPad Pro (iPadOS 17.7, full AOT), in process and
 against a real implement over Wi-Fi with delay, loss and link cuts
 ([docs/RESULTS.md](docs/RESULTS.md)); the current one so far on the Mac. What comes next is in
 [docs/PLAN.md](docs/PLAN.md).
 
-MIT, like AgIsoStack++.
+MIT, like AgIsoStack++. SharpIsoTerm is not part of the AgIsoStack project and is not endorsed
+by it; AgIsoStack++'s licence is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which the package carries.
 
 ## How it works
 
@@ -41,7 +43,7 @@ native/build.sh ios        # native/build-ios/libisoshim-all.a (the shim and the
 native/build.sh android    # native/build-android-ABI/libisoshim.so (arm64-v8a, armeabi-v7a, x86_64)
 native/build.sh linux      # native/build-linux-RID/libisoshim.so (x64, arm64; on a Mac in Docker)
 native/build.sh windows    # native/build-windows/isoshim.dll (x64; llvm-mingw in Docker)
-cd dotnet/AgIsoStack.VirtualTerminal && dotnet pack -c Release -o OUT   # the package
+cd dotnet/SharpIsoTerm && dotnet pack -c Release -o OUT   # the package
 ```
 
 The package (`net10.0`, `net10.0-ios`, `net10.0-android`) takes each native library that is
@@ -71,7 +73,7 @@ The test apps are `com.agopenweb.isostack-tests` (iOS) and `com.agopenweb.isosta
 ## Use
 
 ```csharp
-using AgIsoStack;
+using SharpIsoTerm;
 
 var link = new AowLink("192.168.4.1", name: "AgOpenWeb");             // an AOW link gateway on the bus
 var stack = new VirtualTerminalStack(new VirtualTerminalOptions

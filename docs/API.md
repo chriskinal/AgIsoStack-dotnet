@@ -1,6 +1,6 @@
 # API reference
 
-Everything a host can call and everything it receives: the C# package `AgIsoStack.VirtualTerminal`,
+Everything a host can call and everything it receives: the C# package `SharpIsoTerm`,
 the JSON messages and the draw list, and the C interface under them (`native/isoshim.h`). How to
 use them together is in [GUIDE.md](GUIDE.md).
 
@@ -9,7 +9,7 @@ Contents: [VirtualTerminalStack](#virtualterminalstack) · [VirtualTerminal](#vi
 [AowLink](#aowlink) · [SlcanLink](#slcanlink) · [Messages](#messages) · [The draw list](#the-draw-list) ·
 [The C interface](#the-c-interface) · [Design](#design)
 
-All types are in namespace `AgIsoStack`; the raw interface is `AgIsoStack.Interop.IsoShim`.
+All types are in namespace `SharpIsoTerm`; the raw interface is `SharpIsoTerm.Interop.IsoShim`.
 
 ## VirtualTerminalStack
 
@@ -360,7 +360,7 @@ objects, VT 6 window masks and key groups.
 
 ## The C interface
 
-`native/isoshim.h`, for hosts not in .NET (the C# package is built on it; `AgIsoStack.Interop.IsoShim`
+`native/isoshim.h`, for hosts not in .NET (the C# package is built on it; `SharpIsoTerm.Interop.IsoShim`
 declares it for P/Invoke, callbacks as `[UnmanagedCallersOnly]` function pointers, as iOS AOT
 requires). Library `isoshim` (`libisoshim.dylib`, `.so`, `isoshim.dll`; on iOS the static
 `libisoshim-all.a`, imported as `__Internal`). `isoshim_version()` is 6.

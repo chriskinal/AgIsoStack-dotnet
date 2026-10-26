@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>A byte stream to an adapter. One reader thread and one writer thread may use it at
 /// once.</summary>

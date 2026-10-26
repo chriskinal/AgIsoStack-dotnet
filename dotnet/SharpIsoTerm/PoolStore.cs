@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>Where the terminals keep pool versions (one store for all). Called on the stack's thread; keep it
 /// quick (the bus waits). An exception counts as a failure and is reported through

@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>Sends one CAN frame to the bus (the gateway). Called on the stack's thread; queue
 /// it and return.</summary>

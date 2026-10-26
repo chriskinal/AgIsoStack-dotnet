@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 
-namespace AgIsoStack;
+namespace SharpIsoTerm;
 
 /// <summary>
 /// A link to the bus through an slcan adapter. Frames from the bus come through

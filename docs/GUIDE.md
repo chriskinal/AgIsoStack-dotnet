@@ -1,6 +1,6 @@
 # Integration guide
 
-How to put an ISOBUS virtual terminal into a .NET application with `AgIsoStack.VirtualTerminal`:
+How to put an ISOBUS virtual terminal into a .NET application with `SharpIsoTerm`:
 what the parts are, the code a host writes, and the rules it must keep. Every member, message and
 field is in the reference, [API.md](API.md). For AI assistants, [llms.txt](../llms.txt) is the
 short version.
@@ -48,12 +48,12 @@ The package isn't on nuget.org yet. Build it from this repository:
 
 ```sh
 native/build.sh mac        # and any of: ios android linux windows (see the README)
-cd dotnet/AgIsoStack.VirtualTerminal && dotnet pack -c Release -o ~/nuget-local
+cd dotnet/SharpIsoTerm && dotnet pack -c Release -o ~/nuget-local
 dotnet nuget add source ~/nuget-local -n local    # once
 ```
 
 ```xml
-<PackageReference Include="AgIsoStack.VirtualTerminal" Version="0.1.0" />
+<PackageReference Include="SharpIsoTerm" Version="0.1.0" />
 ```
 
 The package includes a native library for every platform that was built when it was packed:
@@ -72,7 +72,7 @@ package has no library for your runtime (repack after `native/build.sh` for it).
 ## A minimal host
 
 ```csharp
-using AgIsoStack;
+using SharpIsoTerm;
 
 var link = new AowLink("192.168.4.1", name: "My terminal");       // a gateway on the bus
 var stack = new VirtualTerminalStack(new VirtualTerminalOptions

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../AgIsoStack.VirtualTerminal/AgIsoStack.VirtualTerminal.csproj" />
+    <ProjectReference Include="../SharpIsoTerm/SharpIsoTerm.csproj" />
     <Compile Include="../VirtualTerminalTest.cs" />
     <Compile Include="../AowLinkTest.cs" />
     <Compile Include="../SlcanLinkTest.cs" />

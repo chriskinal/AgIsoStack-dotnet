@@ -66,7 +66,7 @@ offered to the Open-Agriculture project once it is a library rather than a spike
    the native side (above). Also names: `isoshim_` becomes the library's prefix, and the C# side a NuGet-shaped package
    with the native libraries per runtime. Done: config, storage, working sets, the draw list,
    soft keys and buttons, input fields (select, numbers, strings, booleans, lists, escape),
-   alarms and audio, and the C# package (`AgIsoStack.VirtualTerminal`: macOS, iOS, three
+   alarms and audio, and the C# package (`SharpIsoTerm`: macOS, iOS, three
    Android ABIs, Linux x64 and arm64, Windows x64; the self-test passes on Linux and Windows,
    and a fresh app using only the package runs on each). The self-test passes on the tablets and
    the bench passes through the class on the Mac and both tablets (RESULTS.md). Next:

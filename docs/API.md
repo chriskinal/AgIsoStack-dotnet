@@ -108,7 +108,7 @@ The terminal settings are each terminal's.
 | `PreferredAddress` | `byte` | 0x26 | The address the first terminal claims first; the next one more, and so on. |
 | `MaskWidth`, `MaskHeight` | `ushort` | 480 | Data mask in pixels. |
 | `KeyWidth`, `KeyHeight` | `byte` | 80 | Soft key in pixels. |
-| `PhysicalKeys` | `byte` | 6 | Soft keys shown at once. |
+| `PhysicalKeys` | `byte` | 12 | Soft keys shown at once. |
 | `VirtualKeys` | `byte` | 64 | Soft keys a mask may hold. |
 | `NavigationKeys` | `byte` | 0 | |
 | `Version` | `byte` | 5 | VT version, 3 to 6. |

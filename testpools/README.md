@@ -7,7 +7,7 @@ that shows them all (`painter/sheet.html`).
 | File | What |
 |---|---|
 | `iop.py` | A small pool writer (ISO 11783-6 Annex B layouts) the generators below use |
-| `drawing.py` → `drawing.iop` | The drawing code's test pool: one data mask each for shapes, text, numbers, gauges, pictures and structure, an alarm mask, soft keys. Every sample is labelled with what it should look like |
+| `drawing.py` → `drawing.iop` | The drawing code's test pool: one data mask each for shapes, text, numbers, gauges, pictures and structure, an alarm mask, soft keys (masks of 12, as many as the terminal shows by default, and of 14). Every sample is labelled with what it should look like |
 | `inputs.py` → `inputs.iop` | Every kind of input field; the self-test's input run checks its ids and positions |
 | `expected/` | Each of our pools' screens as draw lists (one line per mask, then a hash per picture), committed: a renderer change shows in `git diff testpools/expected` |
 | `local/` | Git-ignored: other people's pools, their screens (`local/expected/`) and every run's output (`local/out/`) |

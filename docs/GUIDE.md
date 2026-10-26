@@ -119,7 +119,7 @@ All have defaults; most hosts set only `Send` and `Store`.
 | `PreferredAddress` | 0x26 | The address the first terminal claims first (0x26 is the primary VT); the next one more. |
 | `MaskWidth`, `MaskHeight` | 480, 480 | The data mask in pixels, as reported to implements. Implements lay out their screens for this size; the page scales the result. |
 | `KeyWidth`, `KeyHeight` | 80, 80 | One soft key in pixels. |
-| `PhysicalKeys`, `VirtualKeys`, `NavigationKeys` | 6, 64, 0 | Soft keys shown at once, keys a mask may hold, navigation keys. |
+| `PhysicalKeys`, `VirtualKeys`, `NavigationKeys` | 12, 64, 0 | Soft keys shown at once, keys a mask may hold, navigation keys. |
 | `Version` | 5 | VT version reported, 3 to 6. |
 | `SmallFonts`, `LargeFonts` | 0xFF, 0xFF | Font sizes reported as supported. |
 | `PacketsPerCts` | 255 | Frames per clear-to-send in a transfer. 255 makes uploads several times faster over a network link; keep it. |

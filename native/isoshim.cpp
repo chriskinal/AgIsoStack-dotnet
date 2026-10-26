@@ -767,7 +767,7 @@ int32_t isoshim_vt_start(const isoshim_vt_config *configs, int32_t count, const 
 		orDefault<std::uint8_t>(c.preferred_address, static_cast<std::uint8_t>(0x26 + i));
 		orDefault<std::uint8_t>(c.key_width, 80);
 		orDefault<std::uint8_t>(c.key_height, 80);
-		orDefault<std::uint8_t>(c.physical_keys, 6);
+		orDefault<std::uint8_t>(c.physical_keys, 12);
 		orDefault<std::uint8_t>(c.virtual_keys, 64);
 		orDefault<std::uint8_t>(c.version, 5);
 		orDefault<std::uint8_t>(c.small_fonts, 0xFF);

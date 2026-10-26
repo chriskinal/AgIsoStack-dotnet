@@ -82,7 +82,7 @@ typedef struct isoshim_vt_config {
 	uint8_t preferred_address; // 0x26 + the terminal's position
 	uint8_t key_width;        // soft key descriptor in pixels: 80
 	uint8_t key_height;       // 80
-	uint8_t physical_keys;    // 6
+	uint8_t physical_keys;    // 12
 	uint8_t virtual_keys;     // soft keys a soft key mask may hold: 64
 	uint8_t navigation_keys;  // 0
 	uint8_t version;          // VT version, 3 to 6: 5

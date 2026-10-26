@@ -32,7 +32,7 @@ public sealed class VirtualTerminalOptions
     /// <summary>The data mask in pixels (480 x 480).</summary>
     public ushort MaskWidth { get; init; }
     public ushort MaskHeight { get; init; }
-    /// <summary>A soft key in pixels (80 x 80); physical keys (6), keys a mask may hold (64), navigation keys (0).</summary>
+    /// <summary>A soft key in pixels (80 x 80); physical keys (12), keys a mask may hold (64), navigation keys (0).</summary>
     public byte KeyWidth { get; init; }
     public byte KeyHeight { get; init; }
     public byte PhysicalKeys { get; init; }

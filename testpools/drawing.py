@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """drawing.iop: the drawing code's test pool. One data mask per theme (shapes, text, numbers,
-gauges, pictures, structure), an alarm mask and soft keys; each sample is labelled with what it
+gauges, pictures, structure), an alarm mask and soft keys (masks of 12 and of 14); each sample is labelled with what it
 should look like. Plain, not pretty: a test fixture. MIT.
 
   python3 testpools/drawing.py
@@ -212,6 +212,13 @@ items.append((p.input_list(nid(), 100, 16, [label("item 0"), label("item 1")], v
 p.data_mask(1005, items, keys=4000)
 masks.append(1005)
 
+# ---- 1006, 1007 soft keys: as many as the terminal shows (12), and more than that (14) ----
+for oid, keys_id, n in [(1006, 4002, 12), (1007, 4003, 14)]:
+    items = [(title("%d soft keys: %d" % (oid, n)), 4, 2)]
+    items.append((label("keys 0 to %d in order, code = number; the default terminal shows 12" % (n - 1), 470), 4, 24))
+    p.data_mask(oid, items, keys=keys_id)
+    masks.append(oid)
+
 # ---- the working set, an alarm mask, soft keys ----
 p.working_set(0, 1000, [(label("drawing", 60), 0, 0)])
 alarm_text = p.output_string(nid(), 440, 60, p.font(nid(), F16x24, WHITE), "ALARM high priority", options=3, just=CENTRE)
@@ -221,6 +228,9 @@ keys = [p.key(nid(), i, [(key_text("key %d" % i), 2, 30)], bg=[CYAN, YELLOW, LIM
 keys.append(p.object_pointer(nid(), p.key(nid(), 3, [(key_text("by ptr"), 2, 30)], bg=SILVER)))
 p.soft_key_mask(4000, keys)
 p.soft_key_mask(4001, [p.key(nid(), 9, [(key_text("ack"), 2, 30)], bg=WHITE)])
+for keys_id, n in [(4002, 12), (4003, 14)]:
+    p.soft_key_mask(keys_id, [p.key(nid(), i, [(key_text("key %d" % i), 2, 30)], bg=[CYAN, YELLOW, LIME, SILVER][i % 4])
+                              for i in range(n)])
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drawing.iop")
 print(out, *p.save(out))

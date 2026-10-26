@@ -17,7 +17,7 @@
   .head { color: var(--muted); margin-bottom: 8px; }
   .vt { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
   canvas.mask { width: min(480px, 100%); image-rendering: pixelated; cursor: crosshair; }
-  .keys { display: flex; flex-direction: column; gap: 4px; }
+  .keys { display: grid; grid-template-rows: repeat(6, auto); grid-auto-flow: column; gap: 4px; }  /* columns of 6 */
   .keys canvas { width: 64px; image-rendering: pixelated; }
   .hit { color: var(--muted); margin-top: 6px; min-height: 1.4em; }
 </style>

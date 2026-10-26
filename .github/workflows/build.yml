@@ -6,7 +6,8 @@
 # Releases (on the repo's Releases page): nightly, at 05:00 UTC when main has moved since the last
 # one (or by hand: Actions, build, Run workflow), the `nightly` pre-release is replaced with
 # X.Y.Z-nightly.DATE.RUN built from main's head; a tag vX.Y.Z makes release vX.Y.Z. Either has
-# the package and each platform's native library (with isoshim.h) as a zip.
+# the package, each platform's native library (with isoshim.h) as a zip, and the Linux gateway
+# (aow-linkd, gateway/) for x64 and arm64.
 name: build
 
 on:
@@ -82,9 +83,10 @@ jobs:
           if-no-files-found: error
 
   # On Debian 12 (native/docker/linux.Dockerfile), as build.sh does from a Mac, so the library
-  # loads on glibc 2.36 and later: the runner's own Ubuntu is newer.
+  # and the gateway load on glibc 2.36 and later: the runner's own Ubuntu is newer. The gateway's
+  # probe and the conformance check run on the runner, on vcan.
   linux:
-    name: native Linux ${{ matrix.rid }}
+    name: native Linux ${{ matrix.rid }} + gateway
     needs: changed
     if: needs.changed.outputs.go == 'true'
     strategy:
@@ -101,6 +103,25 @@ jobs:
         with:
           name: native-linux-${{ matrix.rid }}
           path: native/build-linux-${{ matrix.rid }}/libisoshim.so
+          if-no-files-found: error
+      - name: gateway
+        run: |
+          # Its version: the tag's, else its CMake project version and the commit.
+          V=$(sed -n 's/^project(aow-linkd VERSION \([0-9.]*\).*/\1/p' gateway/linux/CMakeLists.txt)-${GITHUB_SHA::7}
+          case "$GITHUB_REF" in refs/tags/v*) V=${GITHUB_REF#refs/tags/v} ;; esac
+          docker run --rm -v "$PWD:/src" isoshim-linux-build bash -c "
+            cmake -S /src/gateway/linux -B /src/build-gateway -G Ninja -DAOW_LINKD_VERSION=$V >/dev/null &&
+            cmake --build /src/build-gateway && ctest --test-dir /src/build-gateway --output-on-failure &&
+            strip --strip-unneeded /src/build-gateway/aow-linkd && /src/build-gateway/aow-linkd --version"
+      - name: gateway on vcan
+        run: |
+          sudo modprobe vcan || (sudo apt-get update -qq && sudo apt-get install -y -qq linux-modules-extra-$(uname -r) && sudo modprobe vcan)
+          sudo ip link add vcan1 type vcan && sudo ip link set vcan1 up
+          sudo python3 gateway/linux/tests/link_probe.py build-gateway/aow-linkd bench/aowlink_check.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gateway-linux-${{ matrix.rid }}
+          path: build-gateway/aow-linkd
           if-no-files-found: error
 
   windows:
@@ -231,6 +252,13 @@ jobs:
           zipit linux-x64 artifacts/native-linux-x64/libisoshim.so
           zipit linux-arm64 artifacts/native-linux-arm64/libisoshim.so
           zipit win-x64 artifacts/native-windows/isoshim.dll
+          for rid in x64 arm64; do  # the gateway: a tar, to keep it executable
+            mkdir -p gw-$rid/aow-linkd
+            cp artifacts/gateway-linux-$rid/aow-linkd gateway/linux/aow-linkd.service gateway/linux/aow-linkd.avahi.service \
+               gateway/README.md LICENSE gw-$rid/aow-linkd/
+            chmod +x gw-$rid/aow-linkd/aow-linkd
+            tar czf release/aow-linkd-linux-$rid.tar.gz -C gw-$rid aow-linkd
+          done
           mkdir android  # one folder per ABI, as jniLibs/ has them
           for d in artifacts/native-android/build-android-*; do cp -R "$d" "android/${d##*/build-android-}"; done
           cp native/isoshim.h LICENSE THIRD-PARTY-NOTICES.txt android/

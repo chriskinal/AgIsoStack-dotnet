@@ -43,9 +43,10 @@ to continue it in its own repo).
   tablet and the iPad. Never hold back for older upstream. Do not patch the fetched tree for the
   shim; an upstream fix not yet merged goes in as a patch with a note to drop it.
 - **MIT.** Nothing GPL comes in (AgOpenWeb-HAT, the Teensy firmware and AgIsoVirtualTerminal are
-  GPL: read them, do not copy from them).
-- **Nothing public without the user's OK**: upstream issues, pull requests, comments, making this
-  repo public. The repo is private until the user says otherwise; the name is the user's call.
+  GPL: read them, do not copy from them). The one exception is the user's own: `gateway/linux`
+  came from AgOpenWeb-HAT, all the user's code, relicensed MIT by the user (2026-10-26).
+- **Nothing public without the user's OK**: upstream issues, pull requests, comments. The repo is
+  public (since 2026-10-26, the user's call), and so are its releases.
 - **Test app IDs:** `com.agopenweb.isostack-tests` (iOS), `com.agopenweb.isostack_tests`
   (Android). Never sign a test as `com.agopenweb.ios`: that replaces the installed AgOpenWeb app.
 - Device IDs, the Apple team, the gateway's address and the access point key stay out of the

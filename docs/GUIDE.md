@@ -180,9 +180,9 @@ The stack owns one thread, which runs every terminal. These rules keep a host co
 ### Through a gateway: `AowLink`
 
 `AowLink` is the client for an AOW link gateway: a box on the CAN bus that carries every frame over
-TCP (port 2323; the protocol is [TRANSPORT.md](TRANSPORT.md) section 5). AgOpenWeb-HAT's
-`aow-linkd` is one; `bench/aowlink_gateway.py` is a reference gateway for any Linux machine with
-SocketCAN.
+TCP (port 2323; the protocol is [TRANSPORT.md](TRANSPORT.md) section 5). `aow-linkd`
+([gateway/README.md](../gateway/README.md), in the releases) is one for any Linux machine with
+SocketCAN, and what the AOW HAT runs; `bench/aowlink_gateway.py` is the bench's reference gateway.
 
 - **It reconnects by itself.** After 1 s with nothing from the gateway it drops the link and tries
   again at once, then every 250 ms. `Connected` and `Disconnected` tell you, and

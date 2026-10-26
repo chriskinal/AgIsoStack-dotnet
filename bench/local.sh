@@ -7,7 +7,7 @@
 #   may be given. Needs native/build-linux-arm64 and bench/implement/out (build.sh for each).
 # Output: bench/out/local-IMPLEMENT.txt (the terminal), local-gateway.log, local-implement.log,
 # local-cuts.log. CHECK=1 also runs bench/aowlink_check.py against the gateway afterwards
-# (the implement still on the bus). GATEWAY=/path/to/aow-linkd runs that gateway (AgOpenWeb-HAT's,
+# (the implement still on the bus). GATEWAY=/path/to/aow-linkd runs that gateway (gateway/linux,
 # a Linux arm64 build) instead of bench/aowlink_gateway.py.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)

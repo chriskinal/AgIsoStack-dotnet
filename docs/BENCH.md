@@ -91,7 +91,7 @@ and the relay's frame dump kept on the gateway as `dump-NAME.log`. `sweep.sh` ru
 impairment, `verify.sh` N without the capture with a frame-loss check, `selftest.sh` the
 in-process self-test on the tablets. `local.sh` is the bench with no hardware: the gateway,
 the implement and the terminal in one Linux container on a virtual CAN bus (vcan), link cuts
-by netem on loopback; `GATEWAY=path/to/aow-linkd` runs the HAT's gateway there instead.
+by netem on loopback; `GATEWAY=path/to/aow-linkd` runs the Linux gateway (`gateway/linux`) there instead.
 
 **The test implements** (`bench/implement/build.sh`, Linux arm64; on the Mac in AgOpenWeb-HAT's
 `aow-hat-dev` container): upstream's VT example at 16 packets per DPO (`VT3ExampleTarget`) and

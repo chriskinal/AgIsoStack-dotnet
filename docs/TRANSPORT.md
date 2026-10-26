@@ -241,12 +241,13 @@ from fighting over an implement.
   The self-test's ninth run tests it against a scripted gateway, on every platform.
 - **The reference gateway**: `bench/aowlink_gateway.py` (Python, for the bench). Any
   number of SocketCAN interfaces, one control client, monitors, STATUS from `ip -details`.
-- **The HAT's gateway**: `aow-linkd` in AgOpenWeb-HAT (C++, its `docs/PLAN_VT.md` section 2,
-  2026-10-25): a service on the CM4, off by default, on `hatcan2`, listening on loopback unless
-  the unit is told otherwise. What ships; the reference gateway stays the bench's fallback.
+- **The Linux gateway**: `aow-linkd`, `gateway/linux/` (C++, gateway/README.md): any SocketCAN
+  interfaces, in the releases for Linux x64 and arm64. Written in AgOpenWeb-HAT on 2026-10-25 and
+  moved here on 2026-10-26 (MIT); the HAT packages it as a service on the CM4, off by default, on
+  `hatcan2`. What ships; the reference gateway stays the bench's fallback.
 - **The checker**: `bench/aowlink_check.py HOST [PORT]` tests any gateway against this section:
   hello, status, heartbeat rate, busy, monitors, the silence rule, versions, bad input, unknown
-  messages. Both gateways pass, on the CM4 and in a container.
+  messages. Both gateways pass, on the CM4 and in a container; CI runs it against `aow-linkd`.
 - **To build**: the ESP32 gateway.
 
 ## 6. The timers that matter (ISO 11783-3 and -6)

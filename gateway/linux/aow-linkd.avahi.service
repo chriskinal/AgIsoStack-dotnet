@@ -1,0 +1,12 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- An example: announces aow-linkd by DNS-SD, so AowLinkBrowser lists it by name. Copy to
+     /etc/avahi/services/aow-linkd.service when the gateway listens on the network (--listen). -->
+<service-group>
+  <name replace-wildcards="yes">AOW link gateway on %h</name>
+  <service>
+    <type>_aowlink._tcp</type>
+    <port>2323</port>
+    <txt-record>v=1</txt-record>
+  </service>
+</service-group>

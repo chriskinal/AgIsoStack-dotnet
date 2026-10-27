@@ -8,7 +8,7 @@ knows nothing of ISOBUS. MIT, like the rest of this repo.
 |---|---|---|
 | [`linux/`](linux) | `aow-linkd`: any number of SocketCAN interfaces, C++, one thread | Runs on the AOW HAT (AgOpenWeb-HAT packages it) and any Linux box with SocketCAN; benched on the CM4 with the tablets and the Mac |
 | [`../bench/aowlink_gateway.py`](../bench/aowlink_gateway.py) | The reference gateway, Python | The bench's own; stays in `bench/` with the bench scripts that run it |
-| `esp32/` | An ESP32 with a CAN transceiver and its own Wi-Fi | Not written |
+| [`esp32/`](esp32) | An ESP32 with a CAN transceiver and its own Wi-Fi access point, PlatformIO | Passes `aowlink_check.py` on the bench Wi-Fi, announced by DNS-SD; frames both ways with the HAT on the bench bus; not yet run with a terminal |
 
 `bench/aowlink_check.py HOST [PORT]` checks any gateway against the protocol.
 

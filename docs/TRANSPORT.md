@@ -248,7 +248,10 @@ from fighting over an implement.
 - **The checker**: `bench/aowlink_check.py HOST [PORT]` tests any gateway against this section:
   hello, status, heartbeat rate, busy, monitors, the silence rule, versions, bad input, unknown
   messages. Both gateways pass, on the CM4 and in a container; CI runs it against `aow-linkd`.
-- **To build**: the ESP32 gateway.
+- **The ESP32 gateway**: `gateway/esp32/` (PlatformIO, gateway/esp32/README.md): `aow_link.cpp`
+  as it is, the ESP32's own CAN controller through a 3.3 V transceiver, its own access point or a
+  machine network, DNS-SD. Passes the checker on the bench Wi-Fi and carries frames both ways on
+  the bench bus (2026-10-27); not yet run with a terminal through it.
 
 ## 6. The timers that matter (ISO 11783-3 and -6)
 

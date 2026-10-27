@@ -10,3 +10,4 @@ __pycache__/
 painter/out/
 testpools/local/
 build-gateway/
+.pio/

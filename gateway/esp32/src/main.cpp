@@ -211,6 +211,10 @@ void startWifi() {
         note("joining " + std::string(ssid.c_str()));
     } else {
         WiFi.mode(WIFI_AP);
+        // Not the ESP32's own 192.168.4.1, which is many routers' too (the bench's): a tablet
+        // on both would not know which is which
+        const IPAddress at(192, 168, 23, 1);
+        WiFi.softAPConfig(at, at, IPAddress(255, 255, 255, 0));
         WiFi.softAP(ssid.c_str(), pass.c_str(), 6, 0, 4);
         note("access point " + std::string(ssid.c_str()) + " at " + WiFi.softAPIP().toString().c_str());
     }

@@ -40,7 +40,8 @@ tap EN, let go of BOOT; tap EN again after the upload.
 ## The network
 
 By default its own WPA2 access point, `AOW gateway XXXX` (the end of its MAC address), password
-`aowlink-XXXX`, at 192.168.4.1; change the password before it goes near a machine. It listens on
+`aowlink-XXXX`, at 192.168.23.1 (not the ESP32's usual 192.168.4.1, which is many routers' own
+subnet); change the password before it goes near a machine. It listens on
 port 2323 and announces itself by DNS-SD as `_aowlink._tcp`, TXT `v=1`, named `ISOBUS gateway XXXX`
 unless set. `sta` makes it join a network instead: a machine network or the bench's, never an
 uplink to a farm or office network (TRANSPORT.md, Security). Wi-Fi power save is off. A join

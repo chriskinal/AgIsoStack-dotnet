@@ -53,7 +53,7 @@ dotnet nuget add source ~/nuget-local -n local    # once
 ```
 
 ```xml
-<PackageReference Include="SharpIsoTerm" Version="0.1.0" />
+<PackageReference Include="SharpIsoTerm" Version="0.1.2" />
 ```
 
 The package includes a native library for every platform that was built when it was packed:

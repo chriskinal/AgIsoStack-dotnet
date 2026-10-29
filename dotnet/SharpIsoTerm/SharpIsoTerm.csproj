@@ -17,7 +17,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageId>SharpIsoTerm</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Description>An ISOBUS virtual terminal for .NET: AgIsoStack++'s VT server driven on one thread, the active screen as a draw list.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Native>$(MSBuildThisFileDirectory)../../native/</Native>

@@ -61,8 +61,8 @@ implement this terminal shows.
 | `Task<bool> ActivateAsync(ulong name)` | Shows this implement (one connected to this terminal). True: it is now the one shown. |
 | `Task<bool> SelectAsync(ushort objectId, bool open)` | Gives an input field or button the focus; `open`: an editor is up for it (an `edit` message follows). True: done. |
 | `Task<bool> DeselectAsync()` | Gives nothing the focus. |
-| `Task<InputResult> SetNumberAsync(ushort objectId, uint value)` | Input number (raw value, before offset and scale), input boolean (0 or 1), input list (the index). Selects the field first if needed; closes it. |
-| `Task<InputResult> SetStringAsync(ushort objectId, string text)` | Input string. |
+| `Task<InputResult> SetNumberAsync(ushort objectId, uint value)` | Input number (raw value, before offset and scale), input boolean (0 or 1), input list (the index). Selects the field first if needed; closes it. The implement is told the new value for the field's variable when it has one, else for the field. |
+| `Task<InputResult> SetStringAsync(ushort objectId, string text)` | Input string; the implement is told as for `SetNumberAsync`. |
 | `Task<bool> EscapeAsync()` | Abandons the open field (VT ESC). True: one was open. |
 | `Task<T> InvokeAsync<T>(Func<T> call)` | The stack's. |
 

@@ -314,7 +314,7 @@ public static unsafe class IsoShimSpike
             Check("the editor closes (o null)", LastEdit().Contains("\"o\":null"));
             Check("Locked (9002), disabled: 0", isoshim_set_number(0, 9002, 1) == 0);
             Check("Count (9001, a variable) 12, not selected first: 1", isoshim_set_number(0, 9001, 12) == 1);
-            Check("the implement hears 12", Heard("\"number\",\"o\":9001,\"value\":12"));
+            Check("the implement hears 12 for the variable (21000)", Heard("\"number\",\"o\":21000,\"value\":12"));
             Check("the screen shows 12", Drawn("\"s\":\"12\""));
             Check("Name (8000) lower case, not in its valid characters: -1", SetString(0, 8000, "hello") == -1);
             Check("Name longer than its 10 characters: -1", SetString(0, 8000, "MUCH TOO LONG") == -1);
@@ -322,7 +322,7 @@ public static unsafe class IsoShimSpike
             Check("the implement hears WORLD, padded", Heard("\"string\",\"o\":8000,\"value\":\"WORLD     \""));
             Check("the screen shows WORLD", Drawn("\"s\":\"WORLD     \""));
             Check("Note (8001, a variable) Grüße: 1", SetString(0, 8001, "Grüße") == 1);
-            Check("the implement hears Grüße in Latin-1", Heard("\"string\",\"o\":8001,\"value\":\"Grüße   \""));
+            Check("the implement hears Grüße in Latin-1, for the variable (22000)", Heard("\"string\",\"o\":22000,\"value\":\"Grüße   \""));
             Check("Note with a character outside Latin-1: -1", SetString(0, 8001, "€") == -1);
             Check("Enable (7000) 2: -1", isoshim_set_number(0, 7000, 2) == -1);
             Check("Enable 1: 1", isoshim_set_number(0, 7000, 1) == 1);

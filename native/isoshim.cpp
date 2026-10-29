@@ -345,7 +345,10 @@ public:
 			std::static_pointer_cast<isobus::InputBoolean>(object)->set_value(static_cast<std::uint8_t>(value));
 		else
 			std::static_pointer_cast<isobus::InputList>(object)->set_value(static_cast<std::uint8_t>(value));
-		post([=] { return send_change_numeric_value_message(id, value, ws->get_control_function()); });
+		// The changed value's object: the variable when the input has one (ISO 11783-6; Topcon and
+		// espVT send the same), else the input.
+		const std::uint16_t changed = variable ? variableId : id;
+		post([=] { return send_change_numeric_value_message(changed, value, ws->get_control_function()); });
 		entered(ws, object, value != old);
 		return 1;
 	}
@@ -376,7 +379,8 @@ public:
 			variable->set_value(value);
 		else
 			field->set_value(value);
-		post([=] { return send_change_string_value_message(id, value, ws->get_control_function()); });
+		const std::uint16_t changed = variable ? field->get_variable_reference() : id; // as setNumber
+		post([=] { return send_change_string_value_message(changed, value, ws->get_control_function()); });
 		entered(ws, object, value != current);
 		return 1;
 	}
